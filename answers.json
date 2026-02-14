@@ -1,0 +1,298 @@
+[
+  {
+    "question_id": 1,
+    "answer": "Not specified in the document.",
+    "sources": []
+  },
+  {
+    "question_id": 2,
+    "answer": "Not specified in the document.",
+    "sources": []
+  },
+  {
+    "question_id": 3,
+    "answer": "The total amount of term debt reported by Apple as of September 28, 2024 cannot be directly determined from the provided context.",
+    "sources": [
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        34
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        41
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        36
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        28
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        46
+      ]
+    ]
+  },
+  {
+    "question_id": 4,
+    "answer": "September 28, 2024 (implied from the filename in the Table of Contents)",
+    "sources": [
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        60
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        118
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        3
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        115
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        33
+      ]
+    ]
+  },
+  {
+    "question_id": 5,
+    "answer": "The text does not provide sufficient information to determine if there are any unresolved staff comments from the SEC as of this filing.",
+    "sources": [
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        3
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        8
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        110
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        60
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        121
+      ]
+    ]
+  },
+  {
+    "question_id": 6,
+    "answer": "96,773",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        51
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        54
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        57
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        125
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        41
+      ]
+    ]
+  },
+  {
+    "question_id": 7,
+    "answer": "Approximately 79.6% of Tesla's total revenue in 2023 came from Automotive Sales (excluding Leasing)",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        51
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        39
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        40
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        39
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        41
+      ]
+    ]
+  },
+  {
+    "question_id": 8,
+    "answer": "Elon Musk spends significant time with Tesla and is highly active in its management, but does not devote his full time and attention to the company. He holds multiple executive positions in other companies.",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        22
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        125
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        89
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        29
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        114
+      ]
+    ]
+  },
+  {
+    "question_id": 9,
+    "answer": "Tesla currently produces and delivers Model S, Model X, Model 3, Model Y, and Model 3/Model Y at Fremont Factory and Model 3/Model Y at Gigafactory Shanghai, Berlin-Brandenburg, Texas, and Cybertruck at Gigafactory Nevada.",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        51
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        121
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        35
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        122
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        18
+      ]
+    ]
+  },
+  {
+    "question_id": 10,
+    "answer": "Tesla's lease pass-through fund arrangements are not explicitly mentioned in the provided context. However, based on the information given, it can be inferred that Tesla has various subsidiaries involved in financial services, including leasing operations in different countries.",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        82
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        121
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        56
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        59
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        75
+      ]
+    ]
+  },
+  {
+    "question_id": 11,
+    "answer": "I cannot provide a stock price forecast for Tesla in 2025 based on the given context.",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        51
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        53
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        54
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        50
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        32
+      ]
+    ]
+  },
+  {
+    "question_id": 12,
+    "answer": "Luca Maestri",
+    "sources": [
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        3
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        60
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        58
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        119
+      ],
+      [
+        "10-Q4-2024-As-Filed.pdf",
+        118
+      ]
+    ]
+  },
+  {
+    "question_id": 13,
+    "answer": "I cannot determine the color of Tesla's headquarters from the provided context.",
+    "sources": [
+      [
+        "tsla-20231231-gen.pdf",
+        122
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        121
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        22
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        50
+      ],
+      [
+        "tsla-20231231-gen.pdf",
+        14
+      ]
+    ]
+  }
+]

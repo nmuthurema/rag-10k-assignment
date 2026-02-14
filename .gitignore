@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.Python
+env/
+venv/
+.ipynb_checkpoints/
+data/*.pdf
+chroma_db/
+.cache/
+*.bin
+*.safetensors
+*.log
+.vscode/
+.DS_Store
