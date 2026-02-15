@@ -3,8 +3,8 @@ from typing import Dict, List
 from .retriever import ImprovedRetriever
 from .llm import SmartLLM
 
-def build_context(chunks: List[Dict], max_chars: int = 10000) -> str:
-    """Build context with larger window"""
+def build_context(chunks: List[Dict], max_chars: int = 15000) -> str:
+    """Build context - show FULL chunks without truncation"""
     parts = []
     total_chars = 0
     
@@ -12,7 +12,9 @@ def build_context(chunks: List[Dict], max_chars: int = 10000) -> str:
         doc = c["metadata"]["document"]
         page = c["metadata"]["page"]
         text = c["text"]
-        snippet = f"[{i}] {doc}, p. {page}\n{text[:1500]}\n\n"
+        
+        # DON'T TRUNCATE - show the full chunk
+        snippet = f"[{i}] {doc}, p. {page}\n{text}\n\n"
         
         if total_chars + len(snippet) > max_chars:
             break
@@ -56,7 +58,7 @@ class ImprovedRAGPipeline:
                 unique_chunks.append(c)
                 seen.add(c["text"])
         
-        context = build_context(unique_chunks, max_chars=10000)
+        context = build_context(unique_chunks, max_chars=15000)
         
         try:
             result = self.llm.answer(query, context)
