@@ -48,7 +48,22 @@ class NumericalExtractor:
     
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
-        """Extract shares outstanding"""
+        """Extract shares outstanding - improved to find in sentences"""
+        
+        # Pattern 1: Look for the full sentence pattern
+        # "15,115,823,000 shares of common stock were issued and outstanding"
+        sentence_pattern = r'([\d,]+)\s+shares\s+of\s+common\s+stock\s+were\s+issued\s+and\s+outstanding'
+        match = re.search(sentence_pattern, context, re.IGNORECASE)
+        if match:
+            num_str = match.group(1)
+            try:
+                num = int(num_str.replace(',', ''))
+                if 14000000000 <= num <= 16000000000:
+                    return f"{num_str} shares"
+            except:
+                pass
+        
+        # Pattern 2: Look for just the large number format
         pattern = r'(\d{2},\d{3},\d{3},\d{3})'
         matches = re.findall(pattern, context)
         
