@@ -3,7 +3,8 @@ from typing import Dict, List
 from .retriever import ImprovedRetriever
 from .llm import SmartLLM
 
-def build_context(chunks: List[Dict], max_chars: int = 5000) -> str:
+def build_context(chunks: List[Dict], max_chars: int = 10000) -> str:
+    """Build context - INCREASED to 10000 chars to capture full balance sheets"""
     parts = []
     total_chars = 0
     
@@ -11,7 +12,8 @@ def build_context(chunks: List[Dict], max_chars: int = 5000) -> str:
         doc = c["metadata"]["document"]
         page = c["metadata"]["page"]
         text = c["text"]
-        snippet = f"[{i}] {doc}, p. {page}\n{text[:800]}\n\n"
+        # Show MORE of each chunk (1500 chars instead of 800)
+        snippet = f"[{i}] {doc}, p. {page}\n{text[:1500]}\n\n"
         
         if total_chars + len(snippet) > max_chars:
             break
@@ -55,7 +57,8 @@ class ImprovedRAGPipeline:
                 unique_chunks.append(c)
                 seen.add(c["text"])
         
-        context = build_context(unique_chunks, max_chars=6000)
+        # INCREASED from 6000 to 10000
+        context = build_context(unique_chunks, max_chars=10000)
         
         try:
             result = self.llm.answer(query, context)
