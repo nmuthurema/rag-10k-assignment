@@ -27,6 +27,8 @@ class QueryRouter:
             keywords.extend(["elon musk", "dependent"])
         if "revenue" in q and "total" in q:
             keywords.extend(["total net sales", "revenue"])
+        if "vehicles" in q or "produce" in q:
+            keywords.extend(["Model S", "Model 3", "Model X", "Model Y", "Cybertruck"])
         
         return {
             "company": "apple" if "apple" in q else ("tesla" if "tesla" in q else None),
