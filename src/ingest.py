@@ -1,5 +1,6 @@
 
 import os
+import re
 import torch
 from typing import List, Dict
 from pypdf import PdfReader
@@ -8,7 +9,7 @@ from chromadb import PersistentClient
 
 EMBED_MODEL_NAME = "BAAI/bge-base-en"
 CHUNK_SIZE = 800
-CHUNK_OVERLAP = 150
+CHUNK_OVERLAP = 200
 COLLECTION_NAME = "sec_10k"
 
 def get_device():

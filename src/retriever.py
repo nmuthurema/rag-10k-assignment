@@ -27,7 +27,7 @@ class Retriever:
         self.reranker = CrossEncoder(RERANK_MODEL_NAME, device=get_device())
         print("✅ Retriever ready")
     
-    def dense_retrieve(self, query: str, top_k: int = 20):
+    def dense_retrieve(self, query: str, top_k: int = 25):
         query_emb = self.embed_model.encode([query], convert_to_numpy=True).tolist()
         results = self.collection.query(query_embeddings=query_emb, n_results=top_k, include=["documents", "metadatas"])
         docs = []
@@ -35,7 +35,7 @@ class Retriever:
             docs.append({"text": results["documents"][0][i], "metadata": results["metadatas"][0][i]})
         return docs
     
-    def keyword_retrieve(self, query: str, top_k: int = 20):
+    def keyword_retrieve(self, query: str, top_k: int = 25):
         scores = self.bm25.get_scores(query.split())
         idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
         docs = []
@@ -43,7 +43,7 @@ class Retriever:
             docs.append({"text": self.all_docs["documents"][i], "metadata": self.all_docs["metadatas"][i]})
         return docs
     
-    def rerank(self, query: str, docs: List[Dict], top_k: int = 5):
+    def rerank(self, query: str, docs: List[Dict], top_k: int = 8):
         if len(docs) == 0:
             return []
         seen = set()
@@ -57,8 +57,8 @@ class Retriever:
         ranked = sorted(zip(unique_docs, scores), key=lambda x: x[1], reverse=True)
         return [doc for doc, _ in ranked[:top_k]]
     
-    def retrieve(self, query: str, top_k: int = 5):
-        dense = self.dense_retrieve(query)
-        keyword = self.keyword_retrieve(query)
+    def retrieve(self, query: str, top_k: int = 8):
+        dense = self.dense_retrieve(query, top_k=25)
+        keyword = self.keyword_retrieve(query, top_k=25)
         combined = dense + keyword
         return self.rerank(query, combined, top_k)

@@ -3,14 +3,14 @@ from typing import Dict, List
 from .retriever import Retriever
 from .llm import LocalLLM
 
-def build_context(chunks: List[Dict], max_chars: int = 3000) -> str:
+def build_context(chunks: List[Dict], max_chars: int = 4000) -> str:
     parts = []
     total_chars = 0
     for i, c in enumerate(chunks, 1):
         doc = c["metadata"]["document"]
         page = c["metadata"]["page"]
         text = c["text"]
-        snippet = f"[{i}] {doc}, p. {page}\n{text[:600]}\n\n"
+        snippet = f"[{i}] {doc}, p. {page}\n{text[:800]}\n\n"
         if total_chars + len(snippet) > max_chars:
             break
         parts.append(snippet)
@@ -31,7 +31,8 @@ class RAGPipeline:
     
     def answer_question(self, query: str) -> Dict:
         print("\n  🔍 Retrieving...")
-        chunks = self.retriever.retrieve(query, top_k=5)
+        top_k = 8 if any(word in query.lower() for word in ["percentage", "total", "how many"]) else 5
+        chunks = self.retriever.retrieve(query, top_k=top_k)
         if not chunks:
             return {"answer": "This question cannot be answered based on the provided documents.", "sources": []}
         print(f"  ✅ Retrieved {len(chunks)} chunks")
@@ -41,7 +42,8 @@ class RAGPipeline:
             if c["text"] not in seen:
                 unique_chunks.append(c)
                 seen.add(c["text"])
-        context = build_context(unique_chunks)
+        context = build_context(unique_chunks, max_chars=4000)
+        print(f"  ✅ Built context ({len(context)} chars)")
         print("  🤖 Generating answer...")
         try:
             result = self.llm.answer(query, context)
