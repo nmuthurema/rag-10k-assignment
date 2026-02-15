@@ -35,7 +35,13 @@ class QueryClassifier:
             if any(term in q_lower for term in ["cfo", "stock price", "color"]):
                 result["type"] = "out_of_scope"
                 return result
-        
+
+        # Detect unanswerable "trivia" questions
+        trivia_patterns = ['what color', 'what size', 'what material', 'painted']
+        if any(pattern in q_lower for pattern in trivia_patterns):
+            result["type"] = "out_of_scope"
+            return result
+            
         # Detect calculation type
         if "percentage" in q_lower or "% of" in q_lower or "what percent" in q_lower:
             result["type"] = "calculation"
