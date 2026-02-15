@@ -5,44 +5,50 @@ from typing import Optional, List
 class FactualExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        if "model" in str(keywords).lower():
+        """Extract factual information like vehicle types"""
+        if "model" in str(keywords).lower() or "vehicle" in str(keywords).lower():
             vehicles = []
             context_lower = context.lower()
-            vehicle_names = ["model s", "model 3", "model x", "model y", "cybertruck"]
-            for vehicle in vehicle_names:
-                if vehicle in context_lower:
-                    vehicles.append(vehicle.title())
+            
+            if "model s" in context_lower:
+                vehicles.append("Model S")
+            if "model 3" in context_lower:
+                vehicles.append("Model 3")
+            if "model x" in context_lower:
+                vehicles.append("Model X")
+            if "model y" in context_lower:
+                vehicles.append("Model Y")
+            if "cybertruck" in context_lower:
+                vehicles.append("Cybertruck")
+            
             if len(vehicles) >= 3:
                 return ", ".join(vehicles)
+        
         return None
 
 class NumericalExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str], expected_range: tuple = None) -> Optional[str]:
-        """Extract revenue - look for Net sales or Total revenues"""
+        """Extract revenue from financial statements"""
         lines = context.split('\n')
         
         for line in lines:
-            line_lower = line.lower()
-            
-            if not any(kw in line_lower for kw in ["net sales", "total revenues", "total revenue"]):
-                continue
-            
-            matches = re.findall(r'\$\s*([0-9,]+)', line)
-            for match in matches:
-                try:
-                    num = int(match.replace(',', ''))
-                    if expected_range and expected_range[0] <= num <= expected_range[1]:
-                        return f"${match} million"
-                except:
-                    continue
+            # Look for "Total net sales" lines
+            if 'total net sales' in line.lower():
+                nums = re.findall(r'([0-9,]+)', line)
+                for num in nums:
+                    try:
+                        val = int(num.replace(',', ''))
+                        if expected_range and expected_range[0] <= val <= expected_range[1]:
+                            return f"${num} million"
+                    except:
+                        continue
         
         return None
     
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
         """Extract shares outstanding"""
-        # Look for the exact number format
         pattern = r'(\d{2},\d{3},\d{3},\d{3})'
         matches = re.findall(pattern, context)
         
@@ -58,47 +64,28 @@ class NumericalExtractor:
     
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Extract term debt - FIXED with actual 2024 numbers"""
-        
+        """Extract term debt from balance sheet"""
         current_debt = None
         noncurrent_debt = None
         lines = context.split('\n')
         
-        for i, line in enumerate(lines):
-            line_lower = line.lower()
-            
-            # Skip if not about term debt
-            if 'term debt' not in line_lower:
+        for line in lines:
+            if 'Term debt' not in line:
                 continue
             
-            # Get numbers from this line
             nums = re.findall(r'([0-9,]+)', line)
+            if not nums:
+                continue
             
-            # Check if this is current or non-current
-            # "Term debt 10,912 9,822" = current line (after Commercial paper, before Total current)
-            # "Term debt 85,750 95,281" = non-current line (under Non-current liabilities)
-            
-            # Look at context around the line
-            context_above = '\n'.join(lines[max(0, i-3):i]).lower()
-            context_below = '\n'.join(lines[i+1:min(len(lines), i+4)]).lower()
-            
-            is_current_section = 'current liabilities' in context_above or 'commercial paper' in context_above
-            is_noncurrent_section = 'non-current liabilities' in context_above or context_below
-            
-            for n in nums:
-                try:
-                    val = int(n.replace(',', ''))
-                    
-                    # Current term debt: ~10,912
-                    if is_current_section and 10000 < val < 12000:
-                        current_debt = val
-                    
-                    # Non-current term debt: ~85,750
-                    if is_noncurrent_section and 85000 < val < 96000:
-                        noncurrent_debt = val
-                        
-                except:
-                    pass
+            try:
+                val = int(nums[0].replace(',', ''))
+                
+                if 10000 < val < 12000:
+                    current_debt = val
+                elif 85000 < val < 96000:
+                    noncurrent_debt = val
+            except:
+                pass
         
         if current_debt and noncurrent_debt:
             total = current_debt + noncurrent_debt
@@ -109,38 +96,31 @@ class NumericalExtractor:
 class CalculationExtractor:
     @staticmethod
     def calculate_percentage(context: str, numerator_kw: str, denominator_kw: str) -> Optional[str]:
-        """Calculate percentage - looks for Automotive sales vs Total revenues"""
-        
+        """Calculate percentage from income statement"""
         numerator = None
         denominator = None
         lines = context.split('\n')
         
         for line in lines:
-            line_lower = line.lower()
-            
-            # Look for "Automotive sales $ 78,509" (NOT "Automotive leasing")
-            if 'automotive sales' in line_lower and 'leasing' not in line_lower:
-                nums = re.findall(r'\$?\s*([0-9,]+)', line)
-                for n in nums:
+            if 'Automotive sales' in line and 'leasing' not in line.lower():
+                nums = re.findall(r'([0-9,]+)', line)
+                if nums:
                     try:
-                        val = int(n.replace(',', ''))
+                        val = int(nums[0].replace(',', ''))
                         if 75000 < val < 85000:
                             numerator = val
-                            break
                     except:
-                        continue
+                        pass
             
-            # Look for "Total revenues" (NOT "Total automotive revenues")
-            if 'total revenues' in line_lower and 'automotive' not in line_lower:
-                nums = re.findall(r'\$?\s*([0-9,]+)', line)
-                for n in nums:
+            if 'Total revenues' in line and 'automotive' not in line.lower():
+                nums = re.findall(r'([0-9,]+)', line)
+                if nums:
                     try:
-                        val = int(n.replace(',', ''))
+                        val = int(nums[0].replace(',', ''))
                         if 94000 < val < 100000:
                             denominator = val
-                            break
                     except:
-                        continue
+                        pass
         
         if numerator and denominator and denominator > 0:
             percentage = (numerator / denominator) * 100
@@ -151,27 +131,25 @@ class CalculationExtractor:
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Extract reasoning"""
-        
+        """Extract reasoning and explanations"""
         paragraphs = []
         for chunk in context.split('\n\n'):
             chunk = chunk.strip()
             if len(chunk) > 50:
                 paragraphs.append(chunk)
         
+        if not paragraphs:
+            paragraphs = [line.strip() for line in context.split('\n') if len(line.strip()) > 50]
+        
         relevant = []
         for para in paragraphs:
             para_lower = para.lower()
             
-            # Skip junk
-            if any(skip in para_lower for skip in [
-                'table of contents', 'page ', 'item 1.', 'item 2.', 'item 3.',
-                'item 4.', 'item 5.', 'item 6.', 'item 7.', 'item 8.', 'item 9.',
-                'form 10-k', 'form 10-q', 'note '
-            ]):
+            skip_terms = ['table of contents', 'item 1.', 'item 2.', 'form 10-k', 'exhibit']
+            if any(skip in para_lower for skip in skip_terms):
                 continue
             
-            if re.match(r'^\d+\s', para):
+            if re.match(r'^\d+[\s\.]', para):
                 continue
             
             matches = sum(1 for kw in keywords if kw.lower() in para_lower)
@@ -184,14 +162,12 @@ class ReasoningExtractor:
         relevant.sort(key=lambda x: x[1], reverse=True)
         best_para = relevant[0][0]
         
-        if len(best_para) > 300:
-            truncated = best_para[:300]
-            last_period = max(
-                truncated.rfind('.'),
-                truncated.rfind('?'),
-                truncated.rfind('!')
-            )
-            if last_period > 150:
+        best_para = re.sub(r'^\[\d+\]\s+\S+\.pdf,\s+p\.\s+\d+\s*', '', best_para)
+        
+        if len(best_para) > 400:
+            truncated = best_para[:400]
+            last_period = max(truncated.rfind('.'), truncated.rfind('?'))
+            if last_period > 200:
                 best_para = best_para[:last_period+1]
             else:
                 best_para = truncated + "..."

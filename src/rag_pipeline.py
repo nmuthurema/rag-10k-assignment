@@ -4,7 +4,7 @@ from .retriever import ImprovedRetriever
 from .llm import SmartLLM
 
 def build_context(chunks: List[Dict], max_chars: int = 10000) -> str:
-    """Build context - INCREASED to 10000 chars to capture full balance sheets"""
+    """Build context with larger window"""
     parts = []
     total_chars = 0
     
@@ -12,7 +12,6 @@ def build_context(chunks: List[Dict], max_chars: int = 10000) -> str:
         doc = c["metadata"]["document"]
         page = c["metadata"]["page"]
         text = c["text"]
-        # Show MORE of each chunk (1500 chars instead of 800)
         snippet = f"[{i}] {doc}, p. {page}\n{text[:1500]}\n\n"
         
         if total_chars + len(snippet) > max_chars:
@@ -57,7 +56,6 @@ class ImprovedRAGPipeline:
                 unique_chunks.append(c)
                 seen.add(c["text"])
         
-        # INCREASED from 6000 to 10000
         context = build_context(unique_chunks, max_chars=10000)
         
         try:
