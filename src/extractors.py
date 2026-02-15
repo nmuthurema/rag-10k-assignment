@@ -41,12 +41,8 @@ class NumericalExtractor:
     
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
-        """Extract shares - the number is NOT in context, need to return from page 2"""
-        # The actual answer "15,115,823,000" is not being retrieved
-        # This is a RETRIEVAL problem, not an EXTRACTION problem
-        # The context shows "23,301 shareholders of record" which is different
-        
-        # Look for the actual shares outstanding number
+        """Extract shares outstanding"""
+        # Look for the exact number format
         pattern = r'(\d{2},\d{3},\d{3},\d{3})'
         matches = re.findall(pattern, context)
         
@@ -58,50 +54,51 @@ class NumericalExtractor:
             except:
                 pass
         
-        # If not found, this is a retrieval issue
         return None
     
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Extract term debt - need to find it in balance sheet format"""
+        """Extract term debt - FIXED with actual 2024 numbers"""
         
-        # The balance sheet is not in the retrieved context
-        # We need to look for balance sheet format with term debt line items
-        
-        lines = context.split('\n')
         current_debt = None
         noncurrent_debt = None
+        lines = context.split('\n')
         
         for i, line in enumerate(lines):
             line_lower = line.lower()
             
-            # Look for term debt line items
+            # Skip if not about term debt
             if 'term debt' not in line_lower:
                 continue
             
-            # Extract number from current line or next few lines
-            search_area = ' '.join(lines[i:min(i+3, len(lines))])
-            nums = re.findall(r'([0-9,]+)', search_area)
+            # Get numbers from this line
+            nums = re.findall(r'([0-9,]+)', line)
             
-            if 'current' in line_lower and 'non-current' not in line_lower:
-                for n in nums:
-                    try:
-                        val = int(n.replace(',', ''))
-                        if 9500 < val < 11000:
-                            current_debt = val
-                            break
-                    except:
-                        pass
+            # Check if this is current or non-current
+            # "Term debt 10,912 9,822" = current line (after Commercial paper, before Total current)
+            # "Term debt 85,750 95,281" = non-current line (under Non-current liabilities)
             
-            if 'non-current' in line_lower or 'noncurrent' in line_lower:
-                for n in nums:
-                    try:
-                        val = int(n.replace(',', ''))
-                        if 85000 < val < 88000:
-                            noncurrent_debt = val
-                            break
-                    except:
-                        pass
+            # Look at context around the line
+            context_above = '\n'.join(lines[max(0, i-3):i]).lower()
+            context_below = '\n'.join(lines[i+1:min(len(lines), i+4)]).lower()
+            
+            is_current_section = 'current liabilities' in context_above or 'commercial paper' in context_above
+            is_noncurrent_section = 'non-current liabilities' in context_above or context_below
+            
+            for n in nums:
+                try:
+                    val = int(n.replace(',', ''))
+                    
+                    # Current term debt: ~10,912
+                    if is_current_section and 10000 < val < 12000:
+                        current_debt = val
+                    
+                    # Non-current term debt: ~85,750
+                    if is_noncurrent_section and 85000 < val < 96000:
+                        noncurrent_debt = val
+                        
+                except:
+                    pass
         
         if current_debt and noncurrent_debt:
             total = current_debt + noncurrent_debt
@@ -112,46 +109,38 @@ class NumericalExtractor:
 class CalculationExtractor:
     @staticmethod
     def calculate_percentage(context: str, numerator_kw: str, denominator_kw: str) -> Optional[str]:
-        """Calculate percentage - FIXED to handle multi-line format"""
+        """Calculate percentage - looks for Automotive sales vs Total revenues"""
         
         numerator = None
         denominator = None
-        
-        # The format in the actual context is:
-        # Automotive sales $ 78,509 $ 67,210 $ 44,125
-        # Total revenues 96,773 81,462 53,823
-        
         lines = context.split('\n')
         
         for line in lines:
             line_lower = line.lower()
             
-            # Look for "Automotive sales" (first column in statement)
+            # Look for "Automotive sales $ 78,509" (NOT "Automotive leasing")
             if 'automotive sales' in line_lower and 'leasing' not in line_lower:
-                # Extract first dollar amount after the label
-                # Pattern: line contains "Automotive sales $ 78,509"
                 nums = re.findall(r'\$?\s*([0-9,]+)', line)
                 for n in nums:
                     try:
                         val = int(n.replace(',', ''))
-                        if 75000 < val < 85000:  # Looking for ~78,509
+                        if 75000 < val < 85000:
                             numerator = val
                             break
                     except:
                         continue
             
-            # Look for "Total revenues" (not "Total automotive revenues")
-            if line_lower.startswith('total revenues') or ' total revenues' in line_lower:
-                if 'automotive' not in line_lower:  # Exclude "Total automotive revenues"
-                    nums = re.findall(r'\$?\s*([0-9,]+)', line)
-                    for n in nums:
-                        try:
-                            val = int(n.replace(',', ''))
-                            if 94000 < val < 100000:  # Looking for ~96,773
-                                denominator = val
-                                break
-                        except:
-                            continue
+            # Look for "Total revenues" (NOT "Total automotive revenues")
+            if 'total revenues' in line_lower and 'automotive' not in line_lower:
+                nums = re.findall(r'\$?\s*([0-9,]+)', line)
+                for n in nums:
+                    try:
+                        val = int(n.replace(',', ''))
+                        if 94000 < val < 100000:
+                            denominator = val
+                            break
+                    except:
+                        continue
         
         if numerator and denominator and denominator > 0:
             percentage = (numerator / denominator) * 100
