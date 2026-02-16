@@ -99,6 +99,10 @@ class QueryRouter:
         if "revenue" in q and "total" in q:
             analysis["query_type"] = "financial"
             analysis["keywords"].extend(["total net sales", "revenue"])
+        
+        if "automotive" in q and "sales" in q:
+            analysis["query_type"] = "financial"
+            analysis["keywords"].extend(["automotive sales", "total revenues"])
 
         # Calculation
         if "percentage" in q and "automotive" in q:
