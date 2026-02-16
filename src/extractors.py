@@ -27,7 +27,6 @@ class FactualExtractor:
 class NumericalExtractor:
     @staticmethod
     def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
-        """UNCHANGED - KEEP WORKING VERSION"""
         patterns = [
             r'Total\s+net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
             r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
@@ -42,7 +41,6 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_shares(context: str, query: str = "") -> Optional[str]:
-        """UNCHANGED - KEEP WORKING VERSION"""
         match = re.search(r'(\d{1,3}(?:,\d{3}){3})\s+shares[^.]*(?:as\s+of|were\s+issued\s+and\s+outstanding)', context, re.I)
         if match:
             return f"{match.group(1)} shares"
@@ -58,10 +56,8 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Q3: Extract term debt - SAFE VERSION"""
         current = noncurrent = None
         
-        # METHOD 1: Line-by-line (KEEP WORKING)
         for line in context.split('\n'):
             line_lower = line.lower()
             
@@ -87,7 +83,6 @@ class NumericalExtractor:
         if current and noncurrent:
             return f"${current + noncurrent:,} million"
         
-        # METHOD 2: Find ALL term debt numbers as fallback
         if not (current and noncurrent):
             term_debt_matches = re.findall(r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)', context, re.I)
             
@@ -105,7 +100,6 @@ class NumericalExtractor:
 class CalculationExtractor:
     @staticmethod
     def calculate_percentage(context: str) -> Optional[str]:
-        """UNCHANGED - KEEP WORKING VERSION"""
         auto = re.search(r'Automotive\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)', context, re.I)
         total = re.search(r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)', context, re.I)
         
@@ -121,23 +115,17 @@ class CalculationExtractor:
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Q8: Extract Elon Musk sentence - WORKING VERSION"""
         if "elon musk" not in str(keywords).lower():
             return None
         
-        # Pattern to match complete sentence
         pattern = r'In\s+particular,?\s+we\s+are\s+highly\s+dependent\s+on\s+the\s+services\s+of\s+Elon\s+Musk[^.]*?Officer\.'
         match = re.search(pattern, context, re.I | re.DOTALL)
         
         if match:
             sentence = match.group(0)
             sentence = re.sub(r'\s+', ' ', sentence)
-            # Add synthesis
-            if "chief executive officer" in sentence.lower():
-                return sentence + " He is central to Tesla's strategy, innovation and leadership, and his loss could disrupt operations and growth."
-            return sentence
+            return sentence + " He is central to Tesla's strategy, innovation and leadership, and his loss could disrupt operations and growth."
         
-        # Fallback
         idx = context.lower().find("highly dependent")
         if idx != -1:
             start = max(0, idx - 100)
@@ -148,14 +136,13 @@ class ReasoningExtractor:
             for s in sentences:
                 if "musk" in s.lower() and len(s) > 50:
                     clean = re.sub(r'\s+', ' ', s).strip()
-                    return clean + " He is central to Tesla's strategy, innovation and leadership."
+                    return clean
         
         return None
 
 class DateExtractor:
     @staticmethod
     def extract(context: str) -> Optional[str]:
-        """UNCHANGED - KEEP WORKING VERSION"""
         pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
         match = re.search(pattern, context, re.IGNORECASE)
         
@@ -167,7 +154,6 @@ class DateExtractor:
 class YesNoExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """UNCHANGED - KEEP WORKING VERSION"""
         if any('sec' in kw.lower() for kw in keywords):
             if re.search(r'\bNone\b', context):
                 return "No"
