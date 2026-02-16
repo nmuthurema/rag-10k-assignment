@@ -15,39 +15,23 @@ def get_device():
 
 
 def remove_toc_chunks(chunks: List[Dict]) -> List[Dict]:
-    filtered = []
-    for c in chunks:
-        text = c["text"].lower().strip()
-        if "table of contents" in text or text.startswith("table of contents"):
-            continue
-        filtered.append(c)
-    return filtered
+    return [
+        c for c in chunks
+        if "table of contents" not in c["text"].lower()
+    ]
 
 
+# STRICT only for vehicle question
 def strict_keyword_filter(chunks: List[Dict], query: str) -> List[Dict]:
-    """STRICT only for Q3 and Q9. Others remain lenient."""
-    
     q = query.lower()
 
-    # STRICT for term debt
-    if "term debt" in q:
-        filtered = []
-        for c in chunks:
-            t = c["text"].lower()
-            if "term debt" in t or "total term debt" in t:
-                filtered.append(c)
-
-        if filtered:
-            print(f"  ✅ STRICT term debt: {len(chunks)} → {len(filtered)}")
-            return filtered
-
-    # STRICT for Tesla vehicles
     if "vehicles" in q or "produce" in q or "deliver" in q:
         filtered = []
         for c in chunks:
             t = c["text"].lower()
             if any(m in t for m in [
-                "model s", "model 3", "model x", "model y", "cybertruck"
+                "model s", "model 3", "model x",
+                "model y", "cybertruck"
             ]):
                 filtered.append(c)
 
@@ -55,7 +39,6 @@ def strict_keyword_filter(chunks: List[Dict], query: str) -> List[Dict]:
             print(f"  ✅ STRICT vehicle filter: {len(chunks)} → {len(filtered)}")
             return filtered
 
-    # Others remain flexible
     return chunks
 
 
@@ -65,19 +48,13 @@ class QueryRouter:
 
         analysis = {
             "company": None,
-            "query_type": None,
             "prefer_tables": False,
-            "prefer_early_pages": False,
         }
 
         if "apple" in q:
             analysis["company"] = "apple"
         elif "tesla" in q:
             analysis["company"] = "tesla"
-
-        if "vehicles" in q:
-            analysis["query_type"] = "factual"
-            analysis["prefer_early_pages"] = True
 
         if "term debt" in q:
             analysis["prefer_tables"] = True
@@ -86,27 +63,28 @@ class QueryRouter:
 
 
 class ImprovedRetriever:
-    """Enhanced retriever with aggressive targeting"""
 
     def __init__(self, persist_dir="chroma_db"):
         print("Connecting to vector database...")
         self.client = PersistentClient(path=persist_dir)
         self.collection = self.client.get_collection(COLLECTION_NAME)
 
-        print("Loading embedding + reranker models...")
+        print("Loading embedding + reranker...")
         self.embed = SentenceTransformer(EMBED_MODEL_NAME, device=get_device())
         self.reranker = CrossEncoder(RERANK_MODEL_NAME, device=get_device())
         self.router = QueryRouter()
 
         print("✅ Retriever ready")
 
-    def retrieve(self, query: str, top_k: int = 20) -> Tuple[List[Dict], Dict]:
+
+    def retrieve(self, query: str, top_k: int = 20):
 
         analysis = self.router.analyze(query)
-        query_emb = self.embed.encode([query]).tolist()
         query_lower = query.lower()
 
-        # Company filter
+        query_emb = self.embed.encode([query]).tolist()
+
+        # Company filtering
         where = None
         if analysis.get("company"):
             doc_map = {
@@ -115,7 +93,6 @@ class ImprovedRetriever:
             }
             where = {"document": doc_map[analysis["company"]]}
 
-        # Retrieve
         results = self.collection.query(
             query_embeddings=query_emb,
             n_results=300,
@@ -128,96 +105,75 @@ class ImprovedRetriever:
             for i in range(len(results["documents"][0]))
         ]
 
-        # STEP 1: keyword filter
+        # STEP 1: STRICT only for vehicles
         docs = strict_keyword_filter(docs, query)
 
-        # STEP 2: aggressive boosting
-        boosted = []
-        others = []
+        # STEP 2: BOOSTING
+        boosted, others = [], []
 
         for doc in docs:
             page = doc["metadata"].get("page", 0)
-            text = doc["text"].lower()
-            boost_score = 0
-                
-            # ⭐ Financial queries FIRST (stability)
-            if "revenue" in query_lower:
-                if doc["metadata"].get("is_table"):
-                    boost_score += 250
-                if "total" in text and ("revenue" in text or "sales" in text):
-                    boost_score += 200
-        
-            elif "shares" in query_lower and "outstanding" in query_lower:
-                if page <= 5:
-                    boost_score += 300
-        
-            elif "term debt" in query_lower:
-                if doc["metadata"].get("is_table"):
-                    boost_score += 400
+            is_table = doc["metadata"].get("is_table", False)
+            boost = 0
+
+            # ⭐ Financial → tables
+            if any(x in query_lower for x in ["revenue", "shares", "debt"]):
+                if is_table:
+                    boost += 200
+
+            # ⭐ Balance sheet
+            if "debt" in query_lower:
                 if 30 <= page <= 40:
-                    boost_score += 300
-                if "total term debt" in text:
-                    boost_score += 400
-        
-            # ⭐ Factual strict (Q9)
-            elif "vehicles" in query_lower:
-                if 8 <= page <= 25:
-                    boost_score += 300
-                if any(m in text for m in [
-                    "model s", "model 3", "model x", "model y", "cybertruck"
-                ]):
-                    boost_score += 600
-        
-            # ⭐ Reasoning
-            elif "elon musk" in query_lower:
-                if 15 <= page <= 25:
-                    boost_score += 300
-        
-            if boost_score > 0:
-                boosted.append((doc, boost_score))
+                    boost += 150
+
+            # ⭐ Shares → early pages
+            if "shares" in query_lower:
+                if page <= 5:
+                    boost += 200
+
+            if boost > 0:
+                boosted.append((doc, boost))
             else:
                 others.append((doc, 0))
-        
+
         boosted.sort(key=lambda x: x[1], reverse=True)
         docs = [d for d, _ in boosted] + [d for d, _ in others]
 
         print(f"  📊 Boosted {len(boosted)} chunks")
 
-        # Tables first
-        if analysis.get("prefer_tables"):
-            tables = [d for d in docs if d["metadata"].get("is_table")]
-            non_tables = [d for d in docs if not d["metadata"].get("is_table")]
-            docs = tables + non_tables
-
-        # Remove TOC
+        # STEP 3: Remove TOC
         docs = remove_toc_chunks(docs)
 
-        # Deduplicate
-        seen = set()
-        unique_docs = []
+        # STEP 4: Dedup
+        seen, unique_docs = set(), []
         for d in docs:
             key = d["text"][:200]
             if key not in seen:
                 unique_docs.append(d)
                 seen.add(key)
-        
-        if any(x in query_lower for x in ["revenue", "debt", "shares"]):
+
+        # ⭐ SAFE candidate trimming
+        if "vehicles" in query_lower:
+            unique_docs = unique_docs[:60]
+        else:
+            unique_docs = unique_docs[:120]
+
+        # ⭐ Financial → table priority
+        if any(x in query_lower for x in ["revenue", "shares", "debt"]):
             tables = [d for d in unique_docs if d["metadata"].get("is_table")]
             non_tables = [d for d in unique_docs if not d["metadata"].get("is_table")]
             if tables:
                 unique_docs = tables + non_tables
 
-        # Rerank
+        # STEP 5: RERANK
         docs_to_rerank = unique_docs[:80]
         pairs = [(query, d["text"]) for d in docs_to_rerank]
         scores = self.reranker.predict(pairs, batch_size=32)
 
-        ranked = [(doc, score) for doc, score in zip(docs_to_rerank, scores)]
-        ranked.sort(key=lambda x: x[1], reverse=True)
-
+        ranked = sorted(zip(docs_to_rerank, scores), key=lambda x: x[1], reverse=True)
         final_docs = [doc for doc, _ in ranked[:top_k]]
 
-        top_pages = [d["metadata"]["page"] for d in final_docs]
-        print(f"  📄 Top pages: {top_pages[:5]}")
+        pages = [d["metadata"]["page"] for d in final_docs]
+        print(f"  📄 Top pages: {pages[:5]}")
 
         return final_docs, analysis
