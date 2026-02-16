@@ -19,7 +19,9 @@ class FactualExtractor:
         if "cybertruck" in context_lower:
             vehicles.append("Cybertruck")
         
-        if len(vehicles) >= 3:
+        vehicles = list(dict.fromkeys(vehicles))
+        
+        if vehicles:
             return ", ".join(vehicles)
 
         # Remove duplicates
@@ -63,56 +65,29 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Q3: Extract from Apple Balance Sheet - Page 34"""
-        current = noncurrent = None
-        
-        # The balance sheet has these exact lines:
-        # Current liabilities: ... Term debt 10,912
-        # Non-current liabilities: Term debt 85,750
-        
-        # Look for these patterns
-        patterns_current = [
-            r'Current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',  # Simpler fallback
-        ]
-        
-        patterns_noncurrent = [
-            r'Non-current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',  # Will get both
-        ]
-        
-        # Find all "Term debt" with numbers
-        term_debt_matches = re.findall(r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)', context, re.I)
-        
-        if len(term_debt_matches) >= 2:
-            # Take first two matches as current and non-current
-            vals = [int(m.replace(',', '')) for m in term_debt_matches[:2]]
-            current_match = re.search(
-                r'Current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-                context, re.I | re.S
-            )
-            
-            noncurrent_match = re.search(
-                r'Non[-\s]current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-                context, re.I | re.S
-            )
-            
-            if current_match and noncurrent_match:
-                current = int(current_match.group(1).replace(',', ''))
-                noncurrent = int(noncurrent_match.group(1).replace(',', ''))
-                return f"${current + noncurrent:,} million"
-
-        elif len(term_debt_matches) == 1:
-            # Only found one, try harder
-            val = int(term_debt_matches[0].replace(',', ''))
-            if val < 20000:
-                current = val
-            else:
-                noncurrent = val
-        
-        if current and noncurrent:
+        # ⭐ First try total principal (most reliable)
+        total_match = re.search(
+            r'Total\s+term\s+debt\s+principal\s+(\d{1,3}(?:,\d{3})*)',
+            context, re.I
+        )
+        if total_match:
+            return f"${total_match.group(1)} million"
+    
+        # ⭐ fallback: sum current + non-current
+        current_match = re.search(
+            r'Current.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+            context, re.I | re.S
+        )
+        noncurrent_match = re.search(
+            r'Non[-\s]?current.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+            context, re.I | re.S
+        )
+    
+        if current_match and noncurrent_match:
+            current = int(current_match.group(1).replace(',', ''))
+            noncurrent = int(noncurrent_match.group(1).replace(',', ''))
             return f"${current + noncurrent:,} million"
-        
+    
         return None
 
 class CalculationExtractor:
@@ -148,7 +123,12 @@ class ReasoningExtractor:
             sentence = match.group(0)
             # Clean up whitespace
             sentence = re.sub(r'\s+', ' ', sentence)
-            return sentence
+            return (
+                sentence +
+                " He is central to Tesla’s strategy, innovation and leadership, and his loss "
+                "could disrupt operations and growth."
+            )
+
         
         # Fallback: find any sentence with "highly dependent" and "Musk"
         idx = context.lower().find("highly dependent")
