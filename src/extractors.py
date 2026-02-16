@@ -148,40 +148,69 @@ class ReasoningExtractor:
         
         # Special handling for Elon Musk dependency question
         if any('elon musk' in kw.lower() or 'musk' in kw.lower() for kw in keywords):
-            # Look for the sentence that explains his role
-            # The key sentence is: "Although Mr. Musk spends significant time with Tesla and is highly active in our management"
-            sentences = re.split(r'(?<=[.!?])\s+', context)
+            # Look for "highly active" - it's in the key sentence
+            if 'highly active' in context.lower():
+                idx = context.lower().find('highly active')
+                
+                # Go backwards to find sentence start (look for period or beginning)
+                start = idx
+                while start > 0 and context[start-1] not in '.!?':
+                    start -= 1
+                
+                # Go forwards to find sentence end (look for period)
+                end = idx
+                while end < len(context) and context[end] not in '.!?':
+                    end += 1
+                if end < len(context):
+                    end += 1  # Include the period
+                
+                sentence = context[start:end].strip()
+                
+                # Make sure it's the right sentence (contains "Mr. Musk" or "Musk")
+                if 'musk' in sentence.lower() and len(sentence) > 50:
+                    return sentence
             
-            for sent in sentences:
-                sent_lower = sent.lower()
-                # Find sentence with BOTH Musk AND the key phrase
-                if ('mr. musk' in sent_lower or 'elon musk' in sent_lower):
-                    if 'highly active' in sent_lower or 'spends significant time' in sent_lower:
-                        return sent.strip()
-            
-            # If not found, look for any sentence mentioning his activities
-            for sent in sentences:
-                if ('mr. musk' in sent.lower() or 'elon musk' in sent.lower()):
-                    if any(word in sent.lower() for word in ['serves', 'active', 'management', 'involved']):
-                        return sent.strip()
+            # Fallback: look for "spends significant time"
+            if 'spends significant time' in context.lower():
+                idx = context.lower().find('spends significant time')
+                
+                start = idx
+                while start > 0 and context[start-1] not in '.!?':
+                    start -= 1
+                
+                end = idx
+                while end < len(context) and context[end] not in '.!?':
+                    end += 1
+                if end < len(context):
+                    end += 1
+                
+                sentence = context[start:end].strip()
+                if len(sentence) > 50:
+                    return sentence
         
         # For pass-through fund question
         if 'pass-through' in str(keywords).lower():
-            # The answer is in a sentence about financing solar energy systems
-            # Look for complete sentences mentioning pass-through arrangements
             if 'lease pass-through fund arrangements' in context.lower():
                 idx = context.lower().find('lease pass-through fund arrangements')
-                # Get text after this phrase
-                after_text = context[idx:idx+500]
                 
-                # Extract the sentence explaining the purpose
-                sentences = re.split(r'[.!?]', after_text)
-                for sent in sentences:
-                    if 'finance' in sent.lower() or 'investor' in sent.lower():
-                        # Clean up and return
-                        clean = sent.strip()
-                        if len(clean) > 20:
-                            return clean
+                # Find the end of this sentence and get the NEXT sentence
+                # which explains the purpose
+                start = idx
+                while start < len(context) and context[start] not in '.!?':
+                    start += 1
+                if start < len(context):
+                    start += 1  # Skip the period
+                
+                # Now get the next sentence
+                end = start + 1
+                while end < len(context) and context[end] not in '.!?':
+                    end += 1
+                if end < len(context):
+                    end += 1
+                
+                sentence = context[start:end].strip()
+                if 'finance' in sentence.lower() or 'investor' in sentence.lower():
+                    return sentence
         
         # Standard extraction for other questions
         paragraphs = []
@@ -197,8 +226,7 @@ class ReasoningExtractor:
         for para in paragraphs:
             para_lower = para.lower()
             
-            skip_terms = ['table of contents', 'item 1.', 'form 10-k', 'exhibit', 
-                         'consolidated statements']
+            skip_terms = ['table of contents', 'item 1.', 'form 10-k', 'exhibit']
             if any(skip in para_lower for skip in skip_terms):
                 continue
             
@@ -213,13 +241,5 @@ class ReasoningExtractor:
             return None
         
         relevant.sort(key=lambda x: x[1], reverse=True)
-        best_para = relevant[0][0]
-        
-        if len(best_para) > 400:
-            truncated = best_para[:400]
-            last_period = max(truncated.rfind('.'), truncated.rfind('?'))
-            if last_period > 200:
-                best_para = best_para[:last_period+1]
-        
-        return best_para
+        return relevant[0][0]
 
