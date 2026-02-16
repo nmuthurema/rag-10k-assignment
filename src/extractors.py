@@ -93,26 +93,30 @@ class NumericalExtractor:
         return None
 
     @staticmethod
+    @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        numbers = re.findall(
-            r'Term\s+debt[^\$]*\$\s*([0-9,]+)', context, re.IGNORECASE
+    
+        current = re.search(
+            r'current[^$]*\$\s*([0-9,]+)',
+            context,
+            re.IGNORECASE
         )
-        
-        values = []
-        for n in numbers:
+        noncurrent = re.search(
+            r'non[- ]?current[^$]*\$\s*([0-9,]+)',
+            context,
+            re.IGNORECASE
+        )
+    
+        if current and noncurrent:
             try:
-                values.append(int(n.replace(",", "")))
+                c = int(current.group(1).replace(',', ''))
+                nc = int(noncurrent.group(1).replace(',', ''))
+                return f"${c + nc:,} million"
             except:
                 pass
-        
-        valid = [v for v in values if 1000 < v < 200000]
-        
-        if len(valid) >= 2:
-            valid.sort(reverse=True)
-            total = valid[0] + valid[1]
-            return f"${total:,} million"
-        
+    
         return None
+
 
 # ============================================================
 # CALCULATION
@@ -150,30 +154,31 @@ class CalculationExtractor:
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
+    
         if "elon musk" in str(keywords).lower():
-            context = context.replace("Table of Contents", "")
+    
             sentences = re.split(r'(?<=[.!?])\s+', context)
-            
+    
             selected = []
-            
+    
             for s in sentences:
                 s_low = s.lower()
-                
+    
                 if "musk" not in s_low:
                     continue
-                
-                if any(
-                    t in s_low for t in [
-                        "strategy", "innovation", "leadership",
-                        "critical", "central", "dependent", "disrupt"
-                    ]
-                ):
+    
+                if any(t in s_low for t in [
+                    "strategy", "innovation", "leadership",
+                    "critical", "central", "dependent",
+                    "disrupt", "loss"
+                ]):
                     selected.append(s.strip())
-            
+    
             if selected:
-                return " ".join(selected[:4])
-        
+                return " ".join(selected[:3])
+    
         return None
+
 
 # ============================================================
 # DATE

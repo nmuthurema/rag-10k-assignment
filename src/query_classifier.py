@@ -57,7 +57,11 @@ class QueryClassifier:
             result["keywords"] = ["shares outstanding", "common stock", "shares"]
             result["expected_output"] = "number"
             return result
-    
+        if "percentage" in q_lower or "% of" in q_lower:
+            result["type"] = "calculation"
+            result["keywords"] = ["automotive sales", "total revenue"]
+            result["expected_output"] = "percentage"
+            return result
         if "term debt" in q_lower:
             result["type"] = "numerical"
             result["keywords"] = ["term debt", "current", "non-current"]
