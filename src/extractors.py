@@ -5,33 +5,23 @@ from typing import Optional, List
 class FactualExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        vehicles = []
-        context_lower = context.lower()
-        
-        if "model s" in context_lower:
-            vehicles.append("Model S")
-        if "model 3" in context_lower:
-            vehicles.append("Model 3")
-        if "model x" in context_lower:
-            vehicles.append("Model X")
-        if "model y" in context_lower:
-            vehicles.append("Model Y")
-        if "cybertruck" in context_lower:
-            vehicles.append("Cybertruck")
-        
-        vehicles = list(dict.fromkeys(vehicles))
-        
-        if vehicles:
-            return ", ".join(vehicles)
+        models = ["Model S", "Model 3", "Model X", "Model Y", "Cybertruck"]
 
-        # Remove duplicates
-        vehicles = list(dict.fromkeys(vehicles))
-        
-        # If partial, still return
-        if vehicles:
-            return ", ".join(vehicles)
+        found = []
+        context_lower = context.lower()
+
+        for m in models:
+            if m.lower() in context_lower:
+                found.append(m)
+
+        # remove duplicates
+        found = list(dict.fromkeys(found))
+
+        if found:
+            return ", ".join(found)
 
         return None
+
 
 class NumericalExtractor:
     @staticmethod
@@ -64,31 +54,33 @@ class NumericalExtractor:
         return None
 
     @staticmethod
+
     def extract_debt(context: str) -> Optional[str]:
-        # ⭐ First try total principal (most reliable)
+        # ⭐ BEST: look for total term debt principal first
         total_match = re.search(
             r'Total\s+term\s+debt\s+principal\s+(\d{1,3}(?:,\d{3})*)',
-            context, re.I
+            context,
+            re.I
         )
         if total_match:
             return f"${total_match.group(1)} million"
     
-        # ⭐ fallback: sum current + non-current
-        current_match = re.search(
-            r'Current.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-            context, re.I | re.S
-        )
-        noncurrent_match = re.search(
-            r'Non[-\s]?current.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
-            context, re.I | re.S
+        # ⭐ fallback: sum any term debt values found
+        matches = re.findall(
+            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+            context,
+            re.I
         )
     
-        if current_match and noncurrent_match:
-            current = int(current_match.group(1).replace(',', ''))
-            noncurrent = int(noncurrent_match.group(1).replace(',', ''))
-            return f"${current + noncurrent:,} million"
+        if matches:
+            values = [int(m.replace(",", "")) for m in matches]
+    
+            # Apple has 2 main values (current + non-current)
+            if len(values) >= 2:
+                return f"${sum(values[:2]):,} million"
     
         return None
+    
 
 class CalculationExtractor:
     @staticmethod

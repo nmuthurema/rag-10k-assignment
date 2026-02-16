@@ -292,10 +292,11 @@ class ImprovedRetriever:
             
             # Q9: Vehicles - TARGET page 35
             elif "vehicles" in query_lower or "produce" in query_lower:
+                if 10 <= page <= 30:
+                    boost_score += 150                
                 if any(model in text for model in ["model s", "model 3", "model x", "model y", "cybertruck"]):
-                    boost_score += 250
-                if 10 <= page <= 40:
-                    boost_score += 80
+                    boost_score += 300
+                
 
             
             # Q2: Early pages
