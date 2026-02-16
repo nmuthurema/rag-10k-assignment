@@ -13,7 +13,7 @@ def build_context(chunks: List[Dict], max_chars: int = 15000) -> str:
         page = c["metadata"]["page"]
         text = c["text"]
         
-        snippet = f"[{i}] {doc}, p. {page}\\n{text}\\n\\n"
+        snippet = f"[{i}] {doc}, p. {page}\\\\n{text}\\\\n\\\\n"
         
         if total_chars + len(snippet) > max_chars:
             break
@@ -27,21 +27,21 @@ class ImprovedRAGPipeline:
     """Production-ready RAG pipeline"""
     
     def __init__(self, persist_dir="chroma_db"):
-        print("\\n" + "="*60)
+        print("\\\\n" + "="*60)
         print("🚀 INITIALIZING QUERY-TYPE-DRIVEN RAG")
         print("="*60)
-        print("\\n📡 Loading retriever...")
+        print("\\\\n📡 Loading retriever...")
         self.retriever = ImprovedRetriever(persist_dir)
-        print("\\n🧠 Loading Smart LLM...")
+        print("\\\\n🧠 Loading Smart LLM...")
         self.llm = SmartLLM()
-        print("\\n" + "="*60)
+        print("\\\\n" + "="*60)
         print("✅ RAG READY")
         print("="*60)
     
     def answer_question(self, query: str, verbose: bool = False) -> Dict:
         """Answer question using query-type-driven approach"""
         if verbose:
-            print(f"\\n🔍 Query: {query[:80]}...")
+            print(f"\\\\n🔍 Query: {query[:80]}...")
         
         # Retrieve chunks
         top_k = 20
