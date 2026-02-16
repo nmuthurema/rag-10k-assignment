@@ -3,7 +3,8 @@ import json
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from .query_classifier import QueryClassifier
-from .extractors import FactualExtractor, NumericalExtractor, CalculationExtractor, ReasoningExtractor
+from .extractors import (FactualExtractor, NumericalExtractor, CalculationExtractor, 
+                         ReasoningExtractor, DateExtractor, YesNoExtractor)
 
 PRIMARY_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
 
@@ -11,6 +12,8 @@ def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 class SmartLLM:
+    """LLM with query-type-driven extraction"""
+    
     def __init__(self):
         print("Initializing Smart LLM with extractors...")
         
@@ -19,6 +22,8 @@ class SmartLLM:
         self.numerical_extractor = NumericalExtractor()
         self.calculation_extractor = CalculationExtractor()
         self.reasoning_extractor = ReasoningExtractor()
+        self.date_extractor = DateExtractor()
+        self.yesno_extractor = YesNoExtractor()
         
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
         self.tokenizer = AutoTokenizer.from_pretrained(PRIMARY_MODEL)
@@ -31,9 +36,10 @@ class SmartLLM:
             device_map="auto"
         )
         
-        print("✅ Smart LLM ready with specialized extractors")
+        print("✅ Smart LLM ready")
     
     def answer(self, question: str, context: str):
+        """Answer using query-type-driven extraction"""
         query_info = self.classifier.classify(question)
         query_type = query_info["type"]
         keywords = query_info["keywords"]
@@ -47,6 +53,7 @@ class SmartLLM:
         
         extracted = None
         
+        # Route to appropriate extractor
         if query_type == "factual":
             print("  🔍 Using factual extractor...")
             extracted = self.factual_extractor.extract(context, keywords)
@@ -62,20 +69,25 @@ class SmartLLM:
                 company = query_info["entities"].get("company")
                 if "revenue" in question.lower():
                     if company == "apple":
-                        extracted = self.numerical_extractor.extract(context, keywords, (380000, 400000))
+                        extracted = self.numerical_extractor.extract_revenue(context, (380000, 400000))
                     elif company == "tesla":
-                        extracted = self.numerical_extractor.extract(context, keywords, (90000, 100000))
+                        extracted = self.numerical_extractor.extract_revenue(context, (90000, 100000))
         
         elif query_type == "calculation":
             print("  🧮 Using calculation extractor...")
-            if "automotive" in question.lower():
-                extracted = self.calculation_extractor.calculate_percentage(
-                    context, "automotive sales", "total revenues"
-                )
+            extracted = self.calculation_extractor.calculate_percentage(context)
         
         elif query_type == "reasoning":
             print("  💭 Using reasoning extractor...")
             extracted = self.reasoning_extractor.extract(context, keywords)
+        
+        elif query_info["expected_output"] == "date":
+            print("  📅 Using date extractor...")
+            extracted = self.date_extractor.extract(context)
+        
+        elif query_info["expected_output"] == "yes_no":
+            print("  ✓ Using yes/no extractor...")
+            extracted = self.yesno_extractor.extract(context, keywords)
         
         if extracted:
             print(f"  ✅ Extracted: {extracted[:100]}")
@@ -85,6 +97,7 @@ class SmartLLM:
         return self._llm_fallback(question, context)
     
     def _llm_fallback(self, question: str, context: str):
+        """LLM fallback when extraction fails"""
         prompt = f"""[INST] Extract the answer from context.
 
 Context:

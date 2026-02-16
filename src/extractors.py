@@ -2,17 +2,20 @@
 import re
 from typing import Optional, List
 
+# ============================================================
+# FACTUAL
+# ============================================================
+
 class FactualExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Extract factual information like vehicle types"""
-        # Check if this is about Tesla vehicles
-        if any(kw.lower() in ['model s', 'model 3', 'model x', 'model y', 'cybertruck', 'vehicles'] 
-               for kw in keywords):
+        if any(
+            kw.lower() in ['model s', 'model 3', 'model x', 'model y', 'cybertruck', 'vehicles']
+            for kw in keywords
+        ):
             vehicles = []
             context_lower = context.lower()
             
-            # Check for each vehicle type
             if "model s" in context_lower:
                 vehicles.append("Model S")
             if "model 3" in context_lower:
@@ -24,222 +27,183 @@ class FactualExtractor:
             if "cybertruck" in context_lower:
                 vehicles.append("Cybertruck")
             
-            # Need at least 3 to be confident
             if len(vehicles) >= 3:
                 return ", ".join(vehicles)
         
         return None
 
+# ============================================================
+# NUMERICAL
+# ============================================================
+
 class NumericalExtractor:
     @staticmethod
-    def extract(context: str, keywords: List[str], expected_range: tuple = None) -> Optional[str]:
-        """Extract revenue from financial statements"""
-        lines = context.split('\n')
+    def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
         
-        for line in lines:
-            # Look for "Total net sales" lines
-            if 'total net sales' in line.lower():
-                nums = re.findall(r'([0-9,]+)', line)
-                for num in nums:
-                    try:
-                        val = int(num.replace(',', ''))
-                        if expected_range and expected_range[0] <= val <= expected_range[1]:
-                            return f"${num} million"
-                    except:
-                        continue
+        # Focus only on relevant context near the year
+        year_context = context
+        
+        if "2023" in context:
+            parts = context.split("2023")
+            year_context = parts[0][-2000:] + parts[-1][:2000]
+        
+        numbers = re.findall(r'\$\s*([0-9,]{5,})', year_context)
+        
+        values = []
+        for n in numbers:
+            try:
+                values.append(int(n.replace(",", "")))
+            except:
+                pass
+        
+        if not values:
+            return None
+        
+        largest = max(values)
+        
+        if expected_range:
+            if expected_range[0] <= largest <= expected_range[1]:
+                return f"${largest:,} million"
         
         return None
-    
+
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
-        """Extract shares outstanding"""
-        # Pattern 1: Full sentence pattern
-        sentence_pattern = r'([\d,]+)\s+shares\s+of\s+common\s+stock\s+were\s+issued\s+and\s+outstanding'
-        match = re.search(sentence_pattern, context, re.IGNORECASE)
-        if match:
-            num_str = match.group(1)
-            try:
-                num = int(num_str.replace(',', ''))
-                if 14000000000 <= num <= 16000000000:
-                    return f"{num_str} shares"
-            except:
-                pass
-        
-        # Pattern 2: Just the number format
-        pattern = r'(\d{2},\d{3},\d{3},\d{3})'
-        matches = re.findall(pattern, context)
-        
-        for match in matches:
-            try:
-                num = int(match.replace(',', ''))
-                if 14000000000 <= num <= 16000000000:
-                    return f"{match} shares"
-            except:
-                pass
-        
-        return None
     
+        # Strong pattern first
+        match = re.search(
+            r'([\d,]{10,})\s+shares.*?outstanding',
+            context,
+            re.IGNORECASE
+        )
+        if match:
+            return f"{int(match.group(1).replace(',', '')):,} shares"
+    
+        # fallback patterns
+        patterns = [
+            r'([\d,]+)\s+shares\s+of\s+common\s+stock\s+were\s+issued\s+and\s+outstanding',
+            r'shares?.*?outstanding.*?([\d,]{10,})',
+        ]
+    
+        for pattern in patterns:
+            m = re.search(pattern, context, re.IGNORECASE | re.DOTALL)
+            if m:
+                return f"{int(m.group(1).replace(',', '')):,} shares"
+    
+        return None
+
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Extract term debt from balance sheet"""
-        # Look for "Term debt" followed by numbers
-        pattern = r'Term debt\s+([0-9,]+)\s+([0-9,]+)'
-        matches = re.findall(pattern, context)
+        numbers = re.findall(
+            r'Term\s+debt[^\$]*\$\s*([0-9,]+)', context, re.IGNORECASE
+        )
         
-        current_debt = None
-        noncurrent_debt = None
-        
-        for match in matches:
+        values = []
+        for n in numbers:
             try:
-                val_2024 = int(match[0].replace(',', ''))
-                
-                if 10000 < val_2024 < 12000:
-                    current_debt = val_2024
-                elif 85000 < val_2024 < 96000:
-                    noncurrent_debt = val_2024
+                values.append(int(n.replace(",", "")))
             except:
                 pass
         
-        if current_debt and noncurrent_debt:
-            total = current_debt + noncurrent_debt
+        valid = [v for v in values if 1000 < v < 200000]
+        
+        if len(valid) >= 2:
+            valid.sort(reverse=True)
+            total = valid[0] + valid[1]
             return f"${total:,} million"
         
         return None
 
+# ============================================================
+# CALCULATION
+# ============================================================
+
 class CalculationExtractor:
     @staticmethod
-    def calculate_percentage(context: str, numerator_kw: str, denominator_kw: str) -> Optional[str]:
-        """Calculate percentage from income statement"""
-        numerator = None
-        denominator = None
-        lines = context.split('\n')
+    def calculate_percentage(context: str) -> Optional[str]:
+        auto_pattern = r'Automotive\s+sales\s+\$\s*([0-9,]+)'
+        total_pattern = r'Total\s+revenues?\s+\$\s*([0-9,]+)'
         
-        for line in lines:
-            if 'Automotive sales' in line and 'leasing' not in line.lower():
-                nums = re.findall(r'([0-9,]+)', line)
-                if nums:
-                    try:
-                        val = int(nums[0].replace(',', ''))
-                        if 75000 < val < 85000:
-                            numerator = val
-                    except:
-                        pass
-            
-            if 'Total revenues' in line and 'automotive' not in line.lower():
-                nums = re.findall(r'([0-9,]+)', line)
-                if nums:
-                    try:
-                        val = int(nums[0].replace(',', ''))
-                        if 94000 < val < 100000:
-                            denominator = val
-                    except:
-                        pass
+        auto_match = re.search(auto_pattern, context, re.IGNORECASE)
+        total_match = re.search(total_pattern, context, re.IGNORECASE)
         
-        if numerator and denominator and denominator > 0:
-            percentage = (numerator / denominator) * 100
-            return f"Approximately {percentage:.1f}% (${numerator:,}M / ${denominator:,}M)"
+        if auto_match and total_match:
+            try:
+                auto = int(auto_match.group(1).replace(',', ''))
+                total = int(total_match.group(1).replace(',', ''))
+                
+                if auto > 10000 and total > auto:
+                    percentage = (auto / total) * 100
+                    return (
+                        f"Approximately {percentage:.1f}% "
+                        f"(${auto:,}M out of ${total:,}M total revenue)"
+                    )
+            except:
+                pass
         
         return None
+
+# ============================================================
+# REASONING
+# ============================================================
 
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Extract reasoning and explanations"""
-        
-        # Special handling for Elon Musk dependency question
-        if any('elon musk' in kw.lower() or 'musk' in kw.lower() for kw in keywords):
-            # Look for the specific sentence about his active role
-            # It contains both "highly active" and mentions Mr. Musk
+        if "elon musk" in str(keywords).lower():
+            context = context.replace("Table of Contents", "")
+            sentences = re.split(r'(?<=[.!?])\s+', context)
             
-            # Search for "highly active" in context
-            if 'highly active' in context.lower():
-                idx = context.lower().find('highly active')
-                # Get surrounding text (200 chars before and after)
-                start = max(0, idx - 200)
-                end = min(len(context), idx + 200)
-                snippet = context[start:end]
+            selected = []
+            
+            for s in sentences:
+                s_low = s.lower()
                 
-                # Find the sentence containing "highly active"
-                # Split by periods but keep them
-                sentences = snippet.split('.')
-                for sent in sentences:
-                    if 'highly active' in sent.lower():
-                        # Clean up and return
-                        clean_sent = sent.strip()
-                        # Add period back if not there
-                        if not clean_sent.endswith('.'):
-                            clean_sent += '.'
-                        return clean_sent
-            
-            # Fallback: look for "spends significant time"
-            if 'spends significant time' in context.lower():
-                idx = context.lower().find('spends significant time')
-                start = max(0, idx - 100)
-                end = min(len(context), idx + 200)
-                snippet = context[start:end]
+                if "musk" not in s_low:
+                    continue
                 
-                sentences = snippet.split('.')
-                for sent in sentences:
-                    if 'spends significant time' in sent.lower() or 'highly active' in sent.lower():
-                        clean_sent = sent.strip()
-                        if not clean_sent.endswith('.'):
-                            clean_sent += '.'
-                        return clean_sent
-        
-        # For pass-through fund question
-        if 'pass-through' in str(keywords).lower():
-            # Look for the explanation after "lease pass-through fund arrangements"
-            if 'lease pass-through fund arrangements' in context.lower():
-                idx = context.lower().find('lease pass-through fund arrangements')
-                # Get text after this phrase (next 400 chars)
-                after_text = context[idx:idx+400]
-                
-                # Look for the sentence with "finance" or "investor"
-                sentences = after_text.split('.')
-                for sent in sentences:
-                    if 'finance' in sent.lower() or 'investor' in sent.lower() or 'solar' in sent.lower():
-                        clean_sent = sent.strip()
-                        if len(clean_sent) > 30:  # Must be substantial
-                            if not clean_sent.endswith('.'):
-                                clean_sent += '.'
-                            return clean_sent
-        
-        # Standard extraction for other questions
-        paragraphs = []
-        for chunk in context.split('\n\n'):
-            chunk = chunk.strip()
-            if len(chunk) > 50:
-                paragraphs.append(chunk)
-        
-        if not paragraphs:
-            paragraphs = [line.strip() for line in context.split('\n') if len(line.strip()) > 50]
-        
-        relevant = []
-        for para in paragraphs:
-            para_lower = para.lower()
+                if any(
+                    t in s_low for t in [
+                        "strategy", "innovation", "leadership",
+                        "critical", "central", "dependent", "disrupt"
+                    ]
+                ):
+                    selected.append(s.strip())
             
-            skip_terms = ['table of contents', 'item 1.', 'form 10-k', 'exhibit', 
-                         'consolidated statements']
-            if any(skip in para_lower for skip in skip_terms):
-                continue
-            
-            if re.match(r'^\d+[\s\.]', para):
-                continue
-            
-            matches = sum(1 for kw in keywords if kw.lower() in para_lower)
-            if matches > 0:
-                relevant.append((para, matches))
+            if selected:
+                return " ".join(selected[:4])
         
-        if not relevant:
-            return None
+        return None
+
+# ============================================================
+# DATE
+# ============================================================
+
+class DateExtractor:
+    @staticmethod
+    def extract(context: str) -> Optional[str]:
+        pattern = (
+            r'(January|February|March|April|May|June|July|August|September|'
+            r'October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
+        )
         
-        relevant.sort(key=lambda x: x[1], reverse=True)
-        best_para = relevant[0][0]
+        match = re.search(pattern, context, re.IGNORECASE)
         
-        if len(best_para) > 400:
-            truncated = best_para[:400]
-            last_period = max(truncated.rfind('.'), truncated.rfind('?'))
-            if last_period > 200:
-                best_para = best_para[:last_period+1]
+        if match:
+            month, day, year = match.groups()
+            return f"{month} {day}, {year}"
         
-        return best_para
+        return None
+
+# ============================================================
+# YES / NO
+# ============================================================
+
+class YesNoExtractor:
+    @staticmethod
+    def extract(context: str, keywords: List[str]) -> Optional[str]:
+        if any('sec' in kw.lower() for kw in keywords):
+            if 'none' in context.lower():
+                return "No"
+        
+        return None

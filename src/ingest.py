@@ -2,6 +2,9 @@
 import os
 import re
 import torch
+import shutil
+import time
+import gc
 from typing import List, Dict
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
@@ -15,12 +18,13 @@ CHUNK_OVERLAP = 150
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-# FIXED: Column-based table detection
 class TableDetector:
+    """Enhanced table detection using column structure analysis"""
+    
     @staticmethod
     def has_columns(line: str) -> bool:
         """Check if line has multiple columns (3+ spaces = separator)"""
-        return len(re.findall(r'\s{3,}', line)) >= 1
+        return len(re.findall(r'\\s{3,}', line)) >= 1
     
     @staticmethod
     def is_table_row(line: str) -> bool:
@@ -28,7 +32,7 @@ class TableDetector:
         if len(line.strip()) < 10:
             return False
         
-        has_numbers = bool(re.search(r'\d', line))
+        has_numbers = bool(re.search(r'\\d', line))
         has_columns = TableDetector.has_columns(line)
         has_dollar = '$' in line
         
@@ -36,13 +40,12 @@ class TableDetector:
                    'debt', 'cash', 'total', 'net', 'equity']
         has_keyword = any(k in line.lower() for k in keywords)
         
-        # Table row: has numbers AND (columns OR dollar) OR (keyword AND columns)
         return (has_numbers and (has_columns or has_dollar)) or (has_keyword and has_columns)
     
     @staticmethod
     def extract_table_blocks(text: str) -> List[Dict]:
         """Extract tables based on column structure"""
-        lines = text.split('\n')
+        lines = text.split('\\n')
         tables = []
         current = []
         
@@ -50,9 +53,9 @@ class TableDetector:
             if TableDetector.is_table_row(line):
                 current.append(line.strip())
             else:
-                if len(current) >= 3:  # At least 3 rows
+                if len(current) >= 3:
                     tables.append({
-                        'text': '\n'.join(current),
+                        'text': '\\n'.join(current),
                         'lines': current.copy(),
                         'start_line': i - len(current)
                     })
@@ -60,7 +63,7 @@ class TableDetector:
         
         if len(current) >= 3:
             tables.append({
-                'text': '\n'.join(current),
+                'text': '\\n'.join(current),
                 'lines': current.copy(),
                 'start_line': len(lines) - len(current)
             })
@@ -113,9 +116,9 @@ def smart_chunk(pages: List[Dict]) -> List[Dict]:
                 table_lines.add(i)
         
         # Create non-table chunks
-        lines = text.split('\n')
+        lines = text.split('\\n')
         non_table = [line for i, line in enumerate(lines) if i not in table_lines]
-        non_table_text = '\n'.join(non_table)
+        non_table_text = '\\n'.join(non_table)
         words = non_table_text.split()
         
         start = 0
@@ -163,7 +166,7 @@ def build_documents(data_folder="data") -> List[Dict]:
                 }
             })
     
-    print(f"\n📊 Total chunks: {len(docs)}")
+    print(f"\\n📊 Total chunks: {len(docs)}")
     table_count = sum(1 for d in docs if d["metadata"]["is_table"])
     print(f"  • Tables: {table_count}")
     print(f"  • Balance sheets: {sum(1 for d in docs if d['metadata']['section'] == 'balance_sheet')}")
@@ -172,53 +175,39 @@ def build_documents(data_folder="data") -> List[Dict]:
     return docs
 
 def index_documents(persist_dir="/kaggle/working/chroma_db"):
-    import shutil
-    import time
-    import gc
-    
-    # CRITICAL: Force cleanup
+    """Index documents with robust cleanup"""
+    # Force cleanup
     if os.path.exists(persist_dir):
         try:
             shutil.rmtree(persist_dir, ignore_errors=True)
         except:
             pass
-        time.sleep(3)  # Wait for file handles to release
+        time.sleep(3)
     
-    # Force garbage collection
     gc.collect()
-    
-    # Create fresh directory
     os.makedirs(persist_dir, exist_ok=True)
-    
-    # Set permissions
     os.chmod(persist_dir, 0o777)
     
-    print("DB path:", persist_dir)
+    print(f"DB path: {persist_dir}")
     
     model = SentenceTransformer(EMBED_MODEL_NAME, device=get_device())
-    
-    # Create new client
     client = PersistentClient(path=persist_dir)
     
-    # Delete collection if exists
+    # Delete and recreate collection
     try:
         client.delete_collection(COLLECTION_NAME)
         time.sleep(1)
     except:
         pass
     
-    # Create fresh collection
     collection = client.get_or_create_collection(COLLECTION_NAME)
-    
     docs = build_documents()
     texts = [d["text"] for d in docs]
     
-    print("\n🔢 Generating embeddings...")
+    print("\\n🔢 Generating embeddings...")
     embeddings = model.encode(texts, batch_size=32, convert_to_numpy=True, show_progress_bar=True)
     
     print("💿 Storing vectors...")
-    
-    # Add in batches with error handling
     batch_size = 50
     for i in range(0, len(docs), batch_size):
         try:
@@ -229,8 +218,7 @@ def index_documents(persist_dir="/kaggle/working/chroma_db"):
                 embeddings=embeddings[i:i+batch_size].tolist()
             )
         except Exception as e:
-            print(f"Warning: Batch {i} failed: {e}")
-            # Try one by one
+            print(f"Warning: Batch {i} failed, trying one-by-one")
             for j in range(i, min(i+batch_size, len(docs))):
                 try:
                     collection.add(
