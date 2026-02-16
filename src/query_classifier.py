@@ -22,7 +22,7 @@ class QueryClassifier:
         # -----------------------------
         if any(x in q for x in [
             "forecast", "future", "prediction",
-            "stock price", "color"
+            "stock price", "color", "cfo"
         ]):
             result["type"] = "out_of_scope"
             return result

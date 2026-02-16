@@ -10,6 +10,7 @@ from typing import Optional, List
 class FactualExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
+
         models = ["Model S", "Model 3", "Model X", "Model Y", "Cybertruck"]
 
         found = []
@@ -19,7 +20,6 @@ class FactualExtractor:
             if m.lower() in context_lower:
                 found.append(m)
 
-        # remove duplicates while preserving order
         found = list(dict.fromkeys(found))
 
         if found:
@@ -37,17 +37,25 @@ class NumericalExtractor:
     # ---------- Q1 & Q6 ----------
     @staticmethod
     def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
+
         patterns = [
             r'Net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
             r'Total\s+net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
-            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)'
+            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
         ]
 
-
         for pattern in patterns:
-            match = re.search(pattern, context, re.IGNORECASE)
+            match = re.search(pattern, context, re.I)
             if match:
                 return f"${match.group(1)} million"
+
+        # Apple table fallback
+        match = re.search(
+            r'(\d{3},\d{3})\s*\n?\s*(\d{3},\d{3})\s*\n?\s*(\d{3},\d{3})',
+            context
+        )
+        if match:
+            return f"${match.group(1)} million"
 
         return None
 
@@ -56,28 +64,23 @@ class NumericalExtractor:
     @staticmethod
     def extract_shares(context: str, query: str = "") -> Optional[str]:
 
-        # Strong pattern first
+        # Apple signature format
         match = re.search(
-            r'(\d{1,3}(?:,\d{3}){3})\s+shares[^.]*?(?:issued\s+and\s+outstanding|as\s+of)',
+            r'(\d{1,3}(?:,\d{3}){3})\s+and\s+\d{1,3}(?:,\d{3}){3}\s+shares\s+issued\s+and\s+outstanding',
             context,
             re.I
         )
-
         if match:
             return f"{match.group(1)} shares"
 
-        # fallback
-        matches = re.findall(
-            r'(\d{1,3}(?:,\d{3}){3})\s+shares',
+        # Balance sheet format
+        match = re.search(
+            r'(\d{1,3}(?:,\d{3}){3})\s+shares\s+issued\s+and\s+outstanding',
             context,
             re.I
         )
-
-        for num_str in matches:
-            num_val = int(num_str.replace(',', ''))
-            if num_val > 10_000_000_000:
-                if 'shareholders of record' not in context.lower():
-                    return f"{num_str} shares"
+        if match:
+            return f"{match.group(1)} shares"
 
         return None
 
@@ -85,33 +88,33 @@ class NumericalExtractor:
     # ---------- Q3 ----------
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-    
-        # Current
+
         current = re.search(
-            r'Current\s+portion.*?(\d{1,3}(?:,\d{3})+)',
-            context, re.I
+            r'Current\s+portion\s+of\s+term\s+debt.*?(\d{1,3}(?:,\d{3})+)',
+            context,
+            re.I
         )
-    
-        # Non-current
+
         non_current = re.search(
-            r'Term\s+debt.*?(\d{1,3}(?:,\d{3})+)',
-            context, re.I
+            r'Term\s+debt,\s+net\s+of\s+current\s+portion.*?(\d{1,3}(?:,\d{3})+)',
+            context,
+            re.I
         )
-    
+
         if current and non_current:
             c = int(current.group(1).replace(",", ""))
             n = int(non_current.group(1).replace(",", ""))
             return f"${c+n:,} million"
-    
-        # fallback total
+
         total = re.search(
             r'Total\s+term\s+debt.*?(\d{1,3}(?:,\d{3})+)',
-            context, re.I
+            context,
+            re.I
         )
-    
+
         if total:
             return f"${total.group(1)} million"
-    
+
         return None
 
 
@@ -192,7 +195,7 @@ class DateExtractor:
             r'September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
         )
 
-        match = re.search(pattern, context, re.IGNORECASE)
+        match = re.search(pattern, context, re.I)
 
         if match:
             return f"{match.group(1)} {match.group(2)}, {match.group(3)}"

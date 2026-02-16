@@ -50,20 +50,29 @@ class SmartLLM:
         print(f"  📊 Query type: {query_type}")
         print(f"  🔑 Keywords: {keywords}")
 
+        # =====================================================
+        # STRICT refusal guard (prevents hallucination)
+        # =====================================================
         if query_type == "out_of_scope":
-            return {"answer": "This question cannot be answered based on the provided documents.", "sources": []}
+            return {
+                "answer": "This question cannot be answered based on the provided documents.",
+                "sources": []
+            }
 
         extracted = None
 
-        # -------- FACTUAL --------
+        # =====================================================
+        # FACTUAL
+        # =====================================================
         if query_type == "factual":
             extracted = self.factual_extractor.extract(context, keywords)
 
-            # Tesla vehicles fallback
             if not extracted and "vehicles" in question.lower():
                 return self.vehicle_llm_fallback(context)
 
-        # -------- NUMERICAL --------
+        # =====================================================
+        # NUMERICAL
+        # =====================================================
         elif query_type == "numerical":
 
             if "shares" in question.lower():
@@ -75,35 +84,52 @@ class SmartLLM:
             elif "revenue" in question.lower():
                 extracted = self.numerical_extractor.extract_revenue(context)
 
-        # -------- CALCULATION --------
+        # =====================================================
+        # CALCULATION
+        # =====================================================
         elif query_type == "calculation":
             extracted = self.calculation_extractor.calculate_percentage(context)
 
-        # -------- REASONING --------
+        # =====================================================
+        # REASONING
+        # =====================================================
         elif query_type == "reasoning":
             extracted = self.reasoning_extractor.extract(context, keywords)
             if not extracted:
                 return self._reasoning_llm(question, context)
 
-        # -------- DATE --------
-        elif query_info["expected_output"] == "date":
-            extracted = self.date_extractor.extract(context)
+        # =====================================================
+        # DATE (fallback detection)
+        # =====================================================
+        if not extracted and re.search(r'\b\d{4}\b', question):
+            date_val = self.date_extractor.extract(context)
+            if date_val:
+                return {"answer": date_val, "sources": []}
 
-        # -------- YES / NO --------
-        elif query_info["expected_output"] == "yes_no":
-            extracted = self.yesno_extractor.extract(context, keywords)
+        # =====================================================
+        # YES / NO detection fallback
+        # =====================================================
+        if not extracted and "sec" in question.lower():
+            yn = self.yesno_extractor.extract(context, keywords)
+            if yn:
+                return {"answer": yn, "sources": []}
 
+        # =====================================================
+        # SUCCESS
+        # =====================================================
         if extracted:
             print(f"  ✅ Extracted: {extracted}")
             return {"answer": extracted, "sources": []}
 
-        # ⭐ Safe fallback
+        # =====================================================
+        # SAFE fallback
+        # =====================================================
         print("  🤖 LLM fallback...")
         return self._llm_fallback(question, context)
 
 
     # =====================================================
-    # VEHICLE FALLBACK (CLEAN)
+    # VEHICLE FALLBACK
     # =====================================================
     def vehicle_llm_fallback(self, context: str):
 
@@ -132,7 +158,6 @@ Context:
 
         text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        # ⭐ Clean output
         models = ["Model S", "Model 3", "Model X", "Model Y", "Cybertruck"]
 
         found = []
@@ -184,7 +209,8 @@ Answer:
     def _llm_fallback(self, question, context):
 
         prompt = f"""[INST]
-Extract the answer from SEC filing context.
+Extract the answer ONLY from the SEC filing context.
+If not found, say "Not specified in the document."
 
 Context:
 {context[:3000]}
@@ -201,7 +227,7 @@ Answer:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=120,
-                temperature=0.2,
+                temperature=0.1,
                 pad_token_id=self.tokenizer.pad_token_id
             )
 

@@ -21,7 +21,7 @@ def remove_toc_chunks(chunks: List[Dict]) -> List[Dict]:
     ]
 
 
-# STRICT only for vehicle question
+# STRICT only for vehicle queries
 def strict_keyword_filter(chunks: List[Dict], query: str) -> List[Dict]:
     q = query.lower()
 
@@ -84,7 +84,7 @@ class ImprovedRetriever:
 
         query_emb = self.embed.encode([query]).tolist()
 
-        # Company filtering
+        # Company filter
         where = None
         if analysis.get("company"):
             doc_map = {
@@ -105,34 +105,42 @@ class ImprovedRetriever:
             for i in range(len(results["documents"][0]))
         ]
 
-        # STEP 1: STRICT only for vehicles
+        # STEP 1: STRICT for vehicle queries only
         docs = strict_keyword_filter(docs, query)
 
         # STEP 2: BOOSTING
         boosted, others = [], []
 
         for doc in docs:
+            boost_score = 0
+
             page = doc["metadata"].get("page", 0)
+            section = doc["metadata"].get("section", "")
             is_table = doc["metadata"].get("is_table", False)
-            boost = 0
 
-            # ⭐ Financial → tables
-            if any(x in query_lower for x in ["revenue", "shares", "debt"]):
+            # Revenue → income statement + tables
+            if "revenue" in query_lower:
+                if section == "income_statement":
+                    boost_score += 300
                 if is_table:
-                    boost += 200
+                    boost_score += 200
 
-            # ⭐ Balance sheet
-            if "debt" in query_lower:
-                if 30 <= page <= 40:
-                    boost += 150
-
-            # ⭐ Shares → early pages
+            # Shares → early pages + tables
             if "shares" in query_lower:
-                if page <= 5:
-                    boost += 200
+                if page <= 3:
+                    boost_score += 400
+                if is_table:
+                    boost_score += 200
 
-            if boost > 0:
-                boosted.append((doc, boost))
+            # Debt → balance sheet + tables
+            if "debt" in query_lower:
+                if section == "balance_sheet":
+                    boost_score += 400
+                if is_table:
+                    boost_score += 200
+
+            if boost_score > 0:
+                boosted.append((doc, boost_score))
             else:
                 others.append((doc, 0))
 
@@ -144,7 +152,7 @@ class ImprovedRetriever:
         # STEP 3: Remove TOC
         docs = remove_toc_chunks(docs)
 
-        # STEP 4: Dedup
+        # STEP 4: Deduplicate
         seen, unique_docs = set(), []
         for d in docs:
             key = d["text"][:200]
@@ -152,20 +160,20 @@ class ImprovedRetriever:
                 unique_docs.append(d)
                 seen.add(key)
 
-        # ⭐ SAFE candidate trimming
+        # Candidate trimming
         if "vehicles" in query_lower:
             unique_docs = unique_docs[:60]
         else:
             unique_docs = unique_docs[:120]
 
-        # ⭐ Financial → table priority
+        # Financial → tables first
         if any(x in query_lower for x in ["revenue", "shares", "debt"]):
             tables = [d for d in unique_docs if d["metadata"].get("is_table")]
             non_tables = [d for d in unique_docs if not d["metadata"].get("is_table")]
             if tables:
                 unique_docs = tables + non_tables
 
-        # STEP 5: RERANK
+        # STEP 5: Rerank
         docs_to_rerank = unique_docs[:80]
         pairs = [(query, d["text"]) for d in docs_to_rerank]
         scores = self.reranker.predict(pairs, batch_size=32)
