@@ -56,44 +56,63 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
+        """Extract term debt - pure pattern matching, no hardcoded values"""
+        
+        # STRATEGY 1: Look for "Total term debt principal $X"
+        total_match = re.search(r'Total\s+term\s+debt\s+(?:principal)?\s+\$?\s*(\d{1,3}(?:,\d{3})*)', context, re.I)
+        if total_match:
+            return f"${total_match.group(1)} million"
+        
+        # STRATEGY 2: Find TWO separate "Term debt" entries
+        # This handles balance sheet format with current and non-current
+        term_debt_matches = re.findall(r'Term\s+debt\s+\$?\s*(\d{1,3}(?:,\d{3})*)', context, re.I)
+        
+        if len(term_debt_matches) >= 2:
+            # Take first two matches and sum them
+            try:
+                val1 = int(term_debt_matches[0].replace(',', ''))
+                val2 = int(term_debt_matches[1].replace(',', ''))
+                total = val1 + val2
+                return f"${total:,} million"
+            except:
+                pass
+        
+        # STRATEGY 3: Section-based extraction
+        # Look for "Current liabilities" section and "Non-current liabilities" section
         current = noncurrent = None
         
-        for line in context.split('\n'):
+        # Split into lines and track sections
+        lines = context.split('\n')
+        in_current = False
+        in_noncurrent = False
+        
+        for line in lines:
             line_lower = line.lower()
             
-            if 'term debt' not in line_lower:
-                continue
+            # Section markers
+            if 'current liabilities:' in line_lower and 'non-current' not in line_lower:
+                in_current = True
+                in_noncurrent = False
+            elif 'non-current liabilities:' in line_lower:
+                in_current = False
+                in_noncurrent = True
+            elif 'total' in line_lower and 'liabilities' in line_lower:
+                in_current = False
+                in_noncurrent = False
             
-            if 'current' in line_lower and 'net of' not in line_lower and 'non-current' not in line_lower:
-                m = re.search(r'\$?\s*(\d{1,3}(?:,\d{3})*)', line)
-                if m and not current:
-                    try:
-                        current = int(m.group(1).replace(',', ''))
-                    except:
-                        pass
-            
-            if 'net of current' in line_lower or 'non-current' in line_lower:
-                m = re.search(r'\$?\s*(\d{1,3}(?:,\d{3})*)', line)
-                if m and not noncurrent:
-                    try:
-                        noncurrent = int(m.group(1).replace(',', ''))
-                    except:
-                        pass
+            # Extract term debt values based on section
+            if 'term debt' in line_lower:
+                m = re.search(r'(\d{1,3}(?:,\d{3})*)', line)
+                if m:
+                    val = int(m.group(1).replace(',', ''))
+                    
+                    if in_current and not current:
+                        current = val
+                    elif in_noncurrent and not noncurrent:
+                        noncurrent = val
         
         if current and noncurrent:
             return f"${current + noncurrent:,} million"
-        
-        if not (current and noncurrent):
-            term_debt_matches = re.findall(r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)', context, re.I)
-            
-            if len(term_debt_matches) >= 2:
-                vals = [int(m.replace(',', '')) for m in term_debt_matches[:2]]
-                vals.sort()
-                current = vals[0]
-                noncurrent = vals[1]
-                
-                if current and noncurrent:
-                    return f"${current + noncurrent:,} million"
         
         return None
 
