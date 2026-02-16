@@ -79,9 +79,11 @@ class SmartLLM:
             extracted = self.calculation_extractor.calculate_percentage(context)
         
         elif query_type == "reasoning":
-            print("  💭 Using reasoning extractor...")
             extracted = self.reasoning_extractor.extract(context, keywords)
         
+            if not extracted:
+                return self._reasoning_llm(question, context)
+                
         elif query_info["expected_output"] == "date":
             print("  📅 Using date extractor...")
             extracted = self.date_extractor.extract(context)
@@ -97,6 +99,37 @@ class SmartLLM:
         print("  🤖 Falling back to LLM...")
         return self._llm_fallback(question, context)
     
+    def _reasoning_llm(self, question, context):
+        prompt = f"""
+    You are analyzing SEC filings.
+    
+    Explain the answer clearly and completely.
+    Include:
+    1. Main reason
+    2. Supporting business explanation
+    3. Impact on company operations
+    
+    Context:
+    {context[:3000]}
+    
+    Question:
+    {question}
+    
+    Answer:
+    """
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=2048).to(self.model.device)
+    
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=180,
+                temperature=0.1
+            )
+    
+        return {
+            "answer": self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        }
+
     def _llm_fallback(self, question: str, context: str):
         """LLM fallback when extraction fails"""
         prompt = f"""[INST] Extract the answer from context.

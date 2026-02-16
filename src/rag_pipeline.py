@@ -56,7 +56,11 @@ class ImprovedRAGPipeline:
         if verbose:
             table_count = sum(1 for c in chunks if c["metadata"].get("is_table"))
             print(f"  ✅ Retrieved {len(chunks)} chunks (tables: {table_count})")
-        
+
+        table_chunks = [c for c in unique_chunks if c["metadata"].get("is_table")]
+        table_context = "\n".join(c["text"] for c in table_chunks[:3])
+        context = table_context + "\n\n" + build_context(unique_chunks)
+
         # Deduplicate
         seen = set()
         unique_chunks = []

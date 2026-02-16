@@ -21,7 +21,14 @@ class FactualExtractor:
         
         if len(vehicles) >= 3:
             return ", ".join(vehicles)
+
+        # Remove duplicates
+        vehicles = list(dict.fromkeys(vehicles))
         
+        # If partial, still return
+        if vehicles:
+            return ", ".join(vehicles)
+
         return None
 
 class NumericalExtractor:
@@ -80,9 +87,21 @@ class NumericalExtractor:
         if len(term_debt_matches) >= 2:
             # Take first two matches as current and non-current
             vals = [int(m.replace(',', '')) for m in term_debt_matches[:2]]
-            vals.sort()  # Smaller one is likely current
-            current = vals[0]
-            noncurrent = vals[1]
+            current_match = re.search(
+                r'Current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+                context, re.I | re.S
+            )
+            
+            noncurrent_match = re.search(
+                r'Non[-\s]current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+                context, re.I | re.S
+            )
+            
+            if current_match and noncurrent_match:
+                current = int(current_match.group(1).replace(',', ''))
+                noncurrent = int(noncurrent_match.group(1).replace(',', ''))
+                return f"${current + noncurrent:,} million"
+
         elif len(term_debt_matches) == 1:
             # Only found one, try harder
             val = int(term_debt_matches[0].replace(',', ''))
