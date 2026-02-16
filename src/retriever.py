@@ -1,4 +1,5 @@
 
+import re
 import torch
 from typing import List, Dict, Tuple
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -26,13 +27,12 @@ def boost_early_pages(chunks: List[Dict], query: str) -> List[Dict]:
     
     # Q2: Shares outstanding as of specific date -> boost early pages (cover page, Part II)
     if "shares" in query.lower() and "outstanding" in query.lower():
-        # Boost pages 1-25
         boosted = []
         others = []
         
         for chunk in chunks:
             page = chunk["metadata"].get("page", 999)
-            if page <= 25:
+            if page <= 5:  # Changed from 25 to 5 for more aggressive boosting
                 boosted.append(chunk)
             else:
                 others.append(chunk)
@@ -46,7 +46,6 @@ def boost_balance_sheet_pages(chunks: List[Dict], query: str) -> List[Dict]:
     
     # Q3: Term debt -> boost balance sheet pages (typically 30-40)
     if "term debt" in query.lower():
-        # Prioritize chunks marked as balance_sheet
         balance_sheets = []
         others = []
         
@@ -63,6 +62,92 @@ def boost_balance_sheet_pages(chunks: List[Dict], query: str) -> List[Dict]:
         return balance_sheets + others
     
     return chunks
+
+def strict_keyword_filter(chunks: List[Dict], query: str) -> List[Dict]:
+    """STRICT filtering for numerical questions - ALL keywords must be present"""
+    
+    query_lower = query.lower()
+    
+    # Detect if it's a numerical question
+    is_numerical = any(word in query_lower for word in ["revenue", "debt", "shares", "percentage", "total"])
+    
+    if not is_numerical:
+        return chunks
+    
+    print(f"  🔢 Numerical query - applying STRICT keyword filtering")
+    
+    filtered = []
+    
+    # Q2: Shares outstanding with date
+    if "shares" in query_lower and "outstanding" in query_lower:
+        required_all = ["shares", "outstanding"]
+        must_have_date = True
+        
+        for chunk in chunks:
+            text_lower = chunk["text"].lower()
+            
+            # Must have ALL required terms
+            if not all(term in text_lower for term in required_all):
+                continue
+            
+            # Must have a date if required
+            if must_have_date:
+                has_date = bool(re.search(
+                    r'(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}',
+                    text_lower
+                ))
+                if not has_date:
+                    continue
+            
+            # Don't include if it's just "shareholders of record" (wrong number)
+            if "shareholders of record" in text_lower and "were issued and outstanding" not in text_lower:
+                continue
+            
+            filtered.append(chunk)
+    
+    # Q3: Term debt
+    elif "term debt" in query_lower:
+        for chunk in chunks:
+            text_lower = chunk["text"].lower()
+            
+            # Must have "term debt" AND at least one of current/non-current
+            if "term debt" in text_lower:
+                if "current" in text_lower or "non-current" in text_lower or "net of current" in text_lower:
+                    filtered.append(chunk)
+    
+    # Q1 & Q6: Revenue
+    elif "revenue" in query_lower or "total net sales" in query_lower:
+        required_any = ["total net sales", "total revenue", "total revenues"]
+        
+        for chunk in chunks:
+            text_lower = chunk["text"].lower()
+            
+            # Must have at least one of the required patterns
+            if any(pattern in text_lower for pattern in required_any):
+                filtered.append(chunk)
+    
+    # Q7: Percentage calculation
+    elif "percentage" in query_lower and "automotive" in query_lower:
+        required_terms = ["automotive", "sales", "total", "revenue"]
+        
+        for chunk in chunks:
+            text_lower = chunk["text"].lower()
+            
+            # Must have at least 3 of 4 terms
+            matches = sum(1 for term in required_terms if term in text_lower)
+            if matches >= 3:
+                filtered.append(chunk)
+    
+    else:
+        # For other numerical queries, use original chunks
+        filtered = chunks
+    
+    if filtered:
+        print(f"  ✅ STRICT filter: {len(chunks)} → {len(filtered)} chunks")
+        return filtered
+    else:
+        print(f"  ⚠️ STRICT filter too aggressive (0 results), keeping original {len(chunks)} chunks")
+        return chunks
 
 class QueryRouter:
     """Routes queries to appropriate retrieval strategies"""
@@ -90,29 +175,29 @@ class QueryRouter:
         if any(k in q for k in ["revenue", "debt", "shares", "percentage", "income", "assets"]):
             analysis["numerical"] = True
         
-        # Q2: Shares outstanding - prefer EARLY pages (cover page)
+        # Q2: Shares outstanding
         if "shares" in q and "outstanding" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["shares", "outstanding", "common stock", "issued"])
+            analysis["keywords"].extend(["shares", "outstanding", "common stock"])
             analysis["prefer_early_pages"] = True
         
-        # Q3: Debt - prefer BALANCE SHEET pages
+        # Q3: Debt
         if "term debt" in q or "debt" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["term debt", "current", "non-current", "balance sheet", "liabilities"])
+            analysis["keywords"].extend(["term debt", "current", "non-current"])
             analysis["prefer_tables"] = True
             analysis["prefer_balance_sheet"] = True
         
         # Revenue
         if "revenue" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["total net sales", "revenue", "consolidated statements"])
+            analysis["keywords"].extend(["total net sales", "revenue"])
             analysis["prefer_tables"] = True
         
-        # Percentage calculation
+        # Percentage
         if "percentage" in q:
             analysis["query_type"] = "calculation"
-            analysis["keywords"].extend(["automotive sales", "total revenues", "consolidated"])
+            analysis["keywords"].extend(["automotive sales", "total revenues"])
             analysis["prefer_tables"] = True
         
         # Vehicles
@@ -124,14 +209,14 @@ class QueryRouter:
         if any(w in q for w in ["reason", "dependent", "why", "purpose"]):
             analysis["query_type"] = "reasoning"
             if "elon musk" in q:
-                analysis["keywords"].extend(["elon musk", "dependent", "leadership", "risk", "services"])
+                analysis["keywords"].extend(["elon musk", "dependent", "leadership"])
             else:
-                analysis["keywords"].extend(["lease", "solar", "ppa", "power purchase"])
+                analysis["keywords"].extend(["lease", "solar", "ppa"])
         
         return analysis
 
 class ImprovedRetriever:
-    """Enhanced retriever with better ranking"""
+    """Enhanced retriever with strict filtering and better ranking"""
     
     def __init__(self, persist_dir="chroma_db"):
         print("Connecting to vector database...")
@@ -146,7 +231,7 @@ class ImprovedRetriever:
         print("✅ Retriever ready")
     
     def retrieve(self, query: str, top_k: int = 20) -> Tuple[List[Dict], Dict]:
-        """Retrieve with improved ranking"""
+        """Retrieve with strict filtering and improved ranking"""
         analysis = self.router.analyze(query)
         query_emb = self.embed.encode([query]).tolist()
         
@@ -162,7 +247,7 @@ class ImprovedRetriever:
         # Retrieve MORE chunks initially
         results = self.collection.query(
             query_embeddings=query_emb,
-            n_results=300,  # Increased from 200
+            n_results=300,
             where=where,
             include=["documents", "metadatas"]
         )
@@ -175,28 +260,19 @@ class ImprovedRetriever:
             for i in range(len(results["documents"][0]))
         ]
         
-        # Keyword filtering
-        keywords = analysis.get("keywords", [])
-        if keywords:
-            print(f"  🔍 Filtering for keywords: {keywords}")
-            filtered = [
-                d for d in docs
-                if any(k.lower() in d["text"].lower() for k in keywords)
-            ]
-            if filtered:
-                print(f"  ✅ Filtered {len(docs)} → {len(filtered)}")
-                docs = filtered
-
-        # Apply query-specific boosts BEFORE reranking
+        # STEP 1: Strict keyword filtering for numerical questions
+        docs = strict_keyword_filter(docs, query)
+        
+        # STEP 2: Apply query-specific boosts BEFORE reranking
         if analysis.get("prefer_early_pages"):
-            print(f"  📄 Boosting early pages (1-25)")
+            print(f"  📄 Boosting early pages (1-5)")
             docs = boost_early_pages(docs, query)
         
         if analysis.get("prefer_balance_sheet"):
             print(f"  📊 Boosting balance sheet pages (30-40)")
             docs = boost_balance_sheet_pages(docs, query)
 
-        # Table preference
+        # STEP 3: Table preference
         if analysis.get("prefer_tables"):
             tables = [d for d in docs if d["metadata"].get("is_table")]
             non_tables = [d for d in docs if not d["metadata"].get("is_table")]
@@ -204,38 +280,35 @@ class ImprovedRetriever:
                 print(f"  📊 Prioritizing {len(tables)} table chunks")
                 docs = tables + non_tables
 
-        # Remove TOC
+        # STEP 4: Remove TOC
         docs = remove_toc_chunks(docs)
         
-        # Deduplicate
+        # STEP 5: Deduplicate
         seen = set()
         unique_docs = []
         for d in docs:
-            text_key = d["text"][:200]  # Use first 200 chars as key
+            text_key = d["text"][:200]
             if text_key not in seen:
                 unique_docs.append(d)
                 seen.add(text_key)
         
-        # Limit before reranking to save time
-        docs_to_rerank = unique_docs[:100]  # Only rerank top 100
+        # STEP 6: Limit before reranking
+        docs_to_rerank = unique_docs[:100]
         
-        # Rerank
+        # STEP 7: Rerank
         pairs = [(query, d["text"]) for d in docs_to_rerank]
         scores = self.reranker.predict(pairs, batch_size=32)
         
-        # Combine with original position score for better ranking
+        # Combine with position boost
         ranked = []
         for i, (doc, score) in enumerate(zip(docs_to_rerank, scores)):
-            # Boost score if early in list (vector search already ranked these)
-            position_boost = (100 - i) / 100 * 0.1  # Small boost for top results
+            position_boost = (100 - i) / 100 * 0.1
             combined_score = score + position_boost
             ranked.append((doc, combined_score))
         
-        # Sort by combined score
         ranked.sort(key=lambda x: x[1], reverse=True)
         ranked_docs = [doc for doc, _ in ranked]
         
-        # Take top_k
         final_docs = ranked_docs[:top_k]
         
         top_pages = [d["metadata"]["page"] for d in final_docs]
