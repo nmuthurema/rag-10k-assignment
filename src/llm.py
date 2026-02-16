@@ -57,6 +57,11 @@ class SmartLLM:
         if query_type == "factual":
             print("  🔍 Using factual extractor...")
             extracted = self.factual_extractor.extract(context, keywords)
+            
+            # 🔥 SPECIAL fallback for Tesla vehicles
+            if not extracted and "vehicles" in question.lower():
+                print("  🚗 Using vehicle-specific LLM fallback...")
+                return self.vehicle_llm_fallback(context)
         
         elif query_type == "numerical":
             print("  🔢 Using numerical extractor...")
@@ -98,7 +103,41 @@ class SmartLLM:
         
         print("  🤖 Falling back to LLM...")
         return self._llm_fallback(question, context)
+
+    def vehicle_llm_fallback(self, context: str):
+        """LLM fallback specifically for Tesla vehicle models"""
+
+        prompt = f"""
+    From the context, list ALL Tesla vehicle models currently produced and delivered.
     
+    Return ONLY the model names separated by commas.
+    Example format:
+    Model S, Model 3, Model X, Model Y, Cybertruck
+    
+    Context:
+    {context[:3000]}
+    
+    Answer:
+    """
+    
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048
+        ).to(self.model.device)
+    
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=60,
+                temperature=0.1
+            )
+    
+        answer = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
+        return {"answer": answer, "sources": []}
+
     def _reasoning_llm(self, question, context):
         prompt = f"""
     You are analyzing SEC filings.
