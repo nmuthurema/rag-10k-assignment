@@ -33,45 +33,33 @@ class FactualExtractor:
         return None
 
 # ============================================================
-# NUMERICAL - FIXED
+# NUMERICAL - PURE RAG VERSION
 # ============================================================
 
 class NumericalExtractor:
     @staticmethod
     def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
+        """Extract total revenue from context"""
         
-        # Focus only on relevant context near the year
-        year_context = context
+        # Look for "Total net sales" or "Total revenues" in tables/statements
+        patterns = [
+            r'Total\s+net\s+sales\s+\$?\s*(\d{1,3}(?:,\d{3})+)',
+            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
+        ]
         
-        if "2023" in context:
-            parts = context.split("2023")
-            year_context = parts[0][-2000:] + parts[-1][:2000]
-        
-        numbers = re.findall(r'\$\s*([0-9,]{5,})', year_context)
-        
-        values = []
-        for n in numbers:
-            try:
-                values.append(int(n.replace(",", "")))
-            except:
-                pass
-        
-        if not values:
-            return None
-        
-        largest = max(values)
-        
-        if expected_range:
-            if expected_range[0] <= largest <= expected_range[1]:
-                return f"${largest:,} million"
+        for pattern in patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                value = int(match.group(1).replace(",", ""))
+                return f"${value:,} million"
         
         return None
 
     @staticmethod
     def extract_shares(context: str, query: str = "") -> Optional[str]:
-        """FIXED: Extract shares outstanding with date validation"""
+        """Extract shares outstanding from context - pure extraction"""
         
-        # Extract target date from query if provided
+        # Extract the date from query to find the right context
         date_match = re.search(
             r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}',
             query,
@@ -80,164 +68,177 @@ class NumericalExtractor:
         
         target_date = date_match.group(0) if date_match else None
         
-        # If we have a target date, only look in context with that date
-        if target_date and target_date in context:
-            # Find share count near the target date
-            match = re.search(r'(\d{1,3}(?:,\d{3}){2,})\s+shares', context, re.IGNORECASE)
+        # Strategy: Find large numbers (10+ digits with commas) near "shares" and the target date
+        if target_date:
+            # Split context into sentences
+            sentences = re.split(r'[.!?]', context)
             
-            if match:
-                shares_str = match.group(1)
-                shares_num = int(shares_str.replace(',', ''))
+            for sentence in sentences:
+                # Must contain the target date
+                if target_date not in sentence:
+                    continue
                 
-                # Validate magnitude (Apple: 10-20 billion shares)
-                if shares_num >= 10_000_000_000:
-                    return f"{shares_str} shares"
+                # Look for large numbers (format: XXX,XXX,XXX,XXX for billions)
+                # This pattern matches numbers with 3+ comma groups (billions)
+                matches = re.findall(r'\b(\d{1,3}(?:,\d{3}){3,})\b', sentence)
+                
+                for num_str in matches:
+                    # Check if "shares" appears in same sentence
+                    if re.search(r'shares?', sentence, re.IGNORECASE):
+                        return f"{num_str} shares"
         
-        # Fallback patterns
-        # Strongest pattern from Apple filing
-        pattern = (
-            r'([\d,]{10,})\s+shares\s+of\s+common\s+stock\s+'
-            r'were\s+issued\s+and\s+outstanding'
-        )
-    
+        # Fallback: Look for explicit "issued and outstanding" pattern
+        pattern = r'(\d{1,3}(?:,\d{3})+)\s+shares[^.]*(?:issued\s+and\s+)?outstanding'
         match = re.search(pattern, context, re.IGNORECASE)
         if match:
-            num = int(match.group(1).replace(",", ""))
-            if num >= 10_000_000_000:  # Validate magnitude
-                return f"{num:,} shares"
-    
-        # fallback: large number + outstanding
-        match = re.search(
-            r'([\d,]{10,})\s+shares.*?outstanding',
-            context,
-            re.IGNORECASE | re.DOTALL
-        )
-    
-        if match:
-            num = int(match.group(1).replace(",", ""))
-            if num >= 10_000_000_000:  # Validate magnitude
-                return f"{num:,} shares"
-    
+            return f"{match.group(1)} shares"
+        
         return None
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """FIXED: Extract and sum current + non-current term debt"""
+        """Extract and sum term debt components from balance sheet"""
         
-        # Look for both components
         current_debt = None
         noncurrent_debt = None
         
-        # Pattern for current portion
-        current_match = re.search(
-            r'term debt[,\s]+current[^$]*?\$\s*(\d{1,3}(?:,\d{3})*)',
-            context,
-            re.IGNORECASE
-        )
+        # Look for current term debt
+        # Common formats:
+        # "Term debt, current portion $ 9,822"
+        # "Current portion of term debt $ 9,822"
         
-        # Pattern for non-current portion
-        noncurrent_match = re.search(
-            r'term debt[,\s]+(?:non-current|net of current)[^$]*?\$\s*(\d{1,3}(?:,\d{3})*)',
-            context,
-            re.IGNORECASE
-        )
+        current_patterns = [
+            r'Term\s+debt[,\s]*current\s+portion\s+\$\s*(\d{1,3}(?:,\d{3})*)',
+            r'Current\s+portion[^$]*term\s+debt\s+\$\s*(\d{1,3}(?:,\d{3})*)',
+        ]
         
-        if current_match:
-            current_debt = int(current_match.group(1).replace(',', ''))
+        for pattern in current_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                current_debt = int(match.group(1).replace(',', ''))
+                break
         
-        if noncurrent_match:
-            noncurrent_debt = int(noncurrent_match.group(1).replace(',', ''))
+        # Look for non-current term debt
+        # Common formats:
+        # "Term debt, net of current portion $ 86,840"
+        # "Long-term debt $ 86,840"
+        
+        noncurrent_patterns = [
+            r'Term\s+debt[,\s]*net\s+of\s+current\s+portion\s+\$\s*(\d{1,3}(?:,\d{3})*)',
+            r'(?:Non-current|Long-term)\s+(?:portion\s+of\s+)?term\s+debt\s+\$\s*(\d{1,3}(?:,\d{3})*)',
+        ]
+        
+        for pattern in noncurrent_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                noncurrent_debt = int(match.group(1).replace(',', ''))
+                break
         
         # If we found both components, sum them
-        if current_debt and noncurrent_debt:
+        if current_debt is not None and noncurrent_debt is not None:
             total = current_debt + noncurrent_debt
-            # Validate range (Apple: $50-200B)
-            if 50_000 <= total <= 200_000:
-                return f"${total:,} million"
+            return f"${total:,} million"
         
+        # If we only found one, that's not enough for "total" - return None
         return None
 
 
 # ============================================================
-# CALCULATION
+# CALCULATION - PURE RAG VERSION
 # ============================================================
 
 class CalculationExtractor:
     @staticmethod
     def calculate_percentage(context: str) -> Optional[str]:
-        auto_pattern = r'Automotive\s+sales\s+\$\s*([0-9,]+)'
-        total_pattern = r'Total\s+revenues?\s+\$\s*([0-9,]+)'
+        """Calculate automotive sales percentage from financial statements"""
         
-        auto_match = re.search(auto_pattern, context, re.IGNORECASE)
-        total_match = re.search(total_pattern, context, re.IGNORECASE)
+        # Look for automotive sales and total revenue in the same context
+        auto_patterns = [
+            r'Automotive\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
+        ]
         
-        if auto_match and total_match:
-            try:
-                auto = int(auto_match.group(1).replace(',', ''))
-                total = int(total_match.group(1).replace(',', ''))
-                
-                if auto > 10000 and total > auto:
-                    percentage = (auto / total) * 100
-                    return (
-                        f"Approximately {percentage:.1f}% "
-                        f"(${auto:,}M out of ${total:,}M total revenue)"
-                    )
-            except:
-                pass
+        total_patterns = [
+            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
+        ]
+        
+        auto_value = None
+        total_value = None
+        
+        # Find automotive sales
+        for pattern in auto_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                auto_value = int(match.group(1).replace(',', ''))
+                break
+        
+        # Find total revenue
+        for pattern in total_patterns:
+            match = re.search(pattern, context, re.IGNORECASE)
+            if match:
+                total_value = int(match.group(1).replace(',', ''))
+                break
+        
+        # Calculate if both found and total > automotive (sanity check)
+        if auto_value and total_value and total_value > auto_value:
+            percentage = (auto_value / total_value) * 100
+            return f"Approximately {percentage:.1f}% (${auto_value:,}M out of ${total_value:,}M total revenue)"
         
         return None
 
 # ============================================================
-# REASONING - FIXED
+# REASONING - PURE RAG VERSION
 # ============================================================
 
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """FIXED: Extract reasoning with synthesis, not quotes"""
+        """Extract reasoning from risk factors or other sections"""
         
         if "elon musk" in str(keywords).lower():
-            # Extract relevant sentences
+            # Find sentences mentioning both Musk and dependency/importance
             sentences = re.split(r'(?<=[.!?])\s+', context)
             
-            selected = []
+            relevant_sentences = []
             
-            for s in sentences:
-                s_low = s.lower()
+            for sentence in sentences:
+                s_lower = sentence.lower()
                 
-                if "musk" not in s_low:
+                # Must mention Musk
+                if "musk" not in s_lower:
                     continue
                 
-                # Look for key reasoning terms
-                if any(t in s_low for t in [
-                    "strategy", "innovation", "leadership",
-                    "critical", "central", "dependent",
-                    "disrupt", "loss", "services"
+                # And mention dependency or importance
+                if any(term in s_lower for term in [
+                    "depend", "critical", "central", "essential", 
+                    "important", "key", "vital", "crucial"
                 ]):
-                    selected.append(s.strip())
+                    relevant_sentences.append(sentence.strip())
             
-            if selected:
-                # Combine and synthesize the first few sentences
-                combined = " ".join(selected[:3])
-                
-                # Try to create a concise summary
-                # Look for key phrases
-                if "highly dependent" in combined.lower():
-                    # Extract the core reasoning
-                    match = re.search(
-                        r'highly dependent[^.]*?(?:services|leadership|strategy)[^.]*',
-                        combined,
-                        re.IGNORECASE
-                    )
-                    if match:
-                        core = match.group(0)
-                        # Add consequence if found
-                        if any(word in combined.lower() for word in ['loss', 'disrupt', 'harm', 'affect']):
-                            return f"{core}; loss could significantly disrupt operations"
-                        return core
-                
-                # Return synthesized version
-                return combined[:300]  # Limit length
+            if not relevant_sentences:
+                return None
+            
+            # Combine the most relevant sentences (up to 3)
+            combined = " ".join(relevant_sentences[:3])
+            
+            # Try to extract a concise summary from the combined text
+            # Look for the core statement about dependency
+            if "highly dependent" in combined.lower():
+                # Find the sentence with "highly dependent"
+                for s in relevant_sentences:
+                    if "highly dependent" in s.lower():
+                        # Clean up and return this sentence
+                        # Remove extra whitespace, limit length
+                        cleaned = re.sub(r'\s+', ' ', s).strip()
+                        if len(cleaned) > 300:
+                            cleaned = cleaned[:300] + "..."
+                        return cleaned
+            
+            # Fallback: return the combined relevant text, limited to reasonable length
+            combined = re.sub(r'\s+', ' ', combined).strip()
+            if len(combined) > 350:
+                combined = combined[:350] + "..."
+            
+            return combined if combined else None
         
         return None
 
@@ -249,7 +250,11 @@ class ReasoningExtractor:
 class DateExtractor:
     @staticmethod
     def extract(context: str) -> Optional[str]:
+        """Extract date from signature pages or filing info"""
+        
+        # Look for date patterns, prioritizing those near "Date:" or signature context
         pattern = (
+            r'(?:Date:\s*)?'
             r'(January|February|March|April|May|June|July|August|September|'
             r'October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
         )
@@ -257,7 +262,9 @@ class DateExtractor:
         match = re.search(pattern, context, re.IGNORECASE)
         
         if match:
-            month, day, year = match.groups()
+            month = match.group(1)
+            day = match.group(2)
+            year = match.group(3)
             return f"{month} {day}, {year}"
         
         return None
@@ -269,8 +276,12 @@ class DateExtractor:
 class YesNoExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
+        """Extract yes/no answers from context"""
+        
+        # For SEC staff comments question
         if any('sec' in kw.lower() for kw in keywords):
-            if 'none' in context.lower():
+            # Look for "None" in response to staff comments
+            if re.search(r'\bNone\b', context):
                 return "No"
         
         return None

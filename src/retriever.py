@@ -23,8 +23,8 @@ def remove_toc_chunks(chunks: List[Dict]) -> List[Dict]:
 
 def rerank_reasoning(chunks: List[Dict]) -> List[Dict]:
     """Boost reasoning-relevant chunks"""
-    reasoning_terms = ["strategy", "innovation", "leadership","disrupt", "success", "vision", "risk", 
-                       "dependent", "central", "critical"]
+    reasoning_terms = ["strategy", "innovation", "leadership", "disrupt", "success", 
+                       "vision", "risk", "dependent", "central", "critical", "essential"]
     
     def score(chunk):
         t = chunk["text"].lower()
@@ -42,7 +42,8 @@ class QueryRouter:
             "company": None,
             "numerical": False,
             "query_type": None,
-            "keywords": []
+            "keywords": [],
+            "prefer_tables": False
         }
         
         # Company detection
@@ -51,43 +52,45 @@ class QueryRouter:
         elif "tesla" in q:
             analysis["company"] = "tesla"
         
-        # Numerical
+        # Query type detection
         if any(k in q for k in ["revenue", "debt", "shares", "percentage", "income", "assets"]):
             analysis["numerical"] = True
         
-        # Shares
+        # Shares outstanding
         if "shares" in q and "outstanding" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["shares", "outstanding", "common stock"])
+            analysis["keywords"].extend(["shares", "outstanding", "common stock", "shareholders"])
         
         # Debt
-        if "term debt" in q:
+        if "term debt" in q or "debt" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["term debt", "current", "non-current"])
+            analysis["keywords"].extend(["term debt", "current", "non-current", "balance sheet", "liabilities"])
+            analysis["prefer_tables"] = True
         
         # Revenue
-        if "revenue" in q and "total" in q:
+        if "revenue" in q:
             analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["total net sales", "revenue"])
+            analysis["keywords"].extend(["total net sales", "revenue", "consolidated statements"])
+            analysis["prefer_tables"] = True
         
-        if "automotive" in q and "sales" in q:
-            analysis["query_type"] = "financial"
-            analysis["keywords"].extend(["automotive sales", "total revenues"])
-        
-        # Calculation
-        if "percentage" in q and "automotive" in q:
+        # Percentage calculation
+        if "percentage" in q:
             analysis["query_type"] = "calculation"
-            analysis["keywords"].extend(["automotive sales", "total revenues"])
+            analysis["keywords"].extend(["automotive sales", "total revenues", "consolidated"])
+            analysis["prefer_tables"] = True
         
         # Vehicles
         if "vehicles" in q or "produce" in q:
             analysis["query_type"] = "factual"
             analysis["keywords"].extend(["model s", "model 3", "model x", "model y", "cybertruck"])
         
-        # Reasoning
-        if "elon musk" in q or "dependent" in q:
+        # Reasoning (dependency, etc.)
+        if any(w in q for w in ["reason", "dependent", "why", "purpose"]):
             analysis["query_type"] = "reasoning"
-            analysis["keywords"].extend(["elon musk", "dependent", "leadership"])
+            if "elon musk" in q:
+                analysis["keywords"].extend(["elon musk", "dependent", "leadership", "risk", "services"])
+            else:
+                analysis["keywords"].extend(["lease", "solar", "ppa", "power purchase"])
         
         return analysis
 
@@ -120,7 +123,7 @@ class ImprovedRetriever:
             }
             where = {"document": doc_map[analysis["company"]]}
         
-        # Retrieve more for filtering
+        # Retrieve chunks
         results = self.collection.query(
             query_embeddings=query_emb,
             n_results=150,
@@ -148,11 +151,13 @@ class ImprovedRetriever:
                 print(f"  ✅ Filtered {len(docs)} → {len(filtered)}")
                 docs = filtered
 
-        if analysis.get("numerical"):
+        # Table preference for financial/calculation queries
+        if analysis.get("prefer_tables"):
             tables = [d for d in docs if d["metadata"].get("is_table")]
+            non_tables = [d for d in docs if not d["metadata"].get("is_table")]
             if tables:
                 print(f"  📊 Prioritizing {len(tables)} table chunks")
-                docs = tables + docs
+                docs = tables + non_tables
 
         # Remove TOC noise
         docs = remove_toc_chunks(docs)
@@ -186,7 +191,9 @@ class ImprovedRetriever:
         for i, d in enumerate(ranked_docs[:3]):
             print()
             print(f"--- Chunk {i+1} (Page {d['metadata']['page']}) ---")
+            is_table = d['metadata'].get('is_table', False)
+            section = d['metadata'].get('section', 'unknown')
+            print(f"Type: {'TABLE' if is_table else 'TEXT'} | Section: {section}")
             print(d["text"][:400])
-
             
         return ranked_docs[:top_k], analysis

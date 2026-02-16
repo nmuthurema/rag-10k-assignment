@@ -15,66 +15,148 @@ CHUNK_OVERLAP = 150
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
-# FIXED: Column-based table detection
+# FIXED: Improved table detection
 class TableDetector:
     @staticmethod
-    def has_columns(line: str) -> bool:
-        """Check if line has multiple columns (3+ spaces = separator)"""
-        return len(re.findall(r'\s{3,}', line)) >= 1
+    def has_dollar_amounts(line: str) -> bool:
+        """Check if line has dollar amounts"""
+        return bool(re.search(r'\$\s*[\d,]+', line))
+    
+    @staticmethod
+    def has_multiple_numbers(line: str) -> bool:
+        """Check if line has multiple numbers (common in tables)"""
+        numbers = re.findall(r'\d{1,3}(?:,\d{3})*', line)
+        return len(numbers) >= 2
+    
+    @staticmethod
+    def has_wide_spacing(line: str) -> bool:
+        """Check if line has wide spacing (table columns)"""
+        # 2+ spaces indicate column separation
+        return bool(re.search(r'\s{2,}', line))
+    
+    @staticmethod
+    def is_financial_keyword(line: str) -> bool:
+        """Check for financial statement keywords"""
+        keywords = [
+            'assets', 'liabilities', 'equity', 'revenue', 'sales',
+            'income', 'cash', 'debt', 'total', 'net', 'balance',
+            'current', 'non-current', 'shares', 'common stock',
+            'term debt', 'accounts payable', 'inventory'
+        ]
+        line_lower = line.lower()
+        return any(kw in line_lower for kw in keywords)
     
     @staticmethod
     def is_table_row(line: str) -> bool:
-        """Check if line is part of a table"""
-        if len(line.strip()) < 10:
+        """Enhanced table row detection"""
+        if len(line.strip()) < 5:
             return False
         
-        has_numbers = bool(re.search(r'\d', line))
-        has_columns = TableDetector.has_columns(line)
-        has_dollar = '$' in line
+        # Strong indicators
+        has_dollars = TableDetector.has_dollar_amounts(line)
+        has_numbers = TableDetector.has_multiple_numbers(line)
+        has_spacing = TableDetector.has_wide_spacing(line)
+        has_keyword = TableDetector.is_financial_keyword(line)
         
-        keywords = ['revenue', 'sales', 'income', 'assets', 'liabilities', 
-                   'debt', 'cash', 'total', 'net', 'equity']
-        has_keyword = any(k in line.lower() for k in keywords)
+        # Table row if:
+        # 1. Has dollar amounts AND spacing
+        # 2. Has multiple numbers AND spacing
+        # 3. Has financial keyword AND (numbers OR spacing)
         
-        # Table row: has numbers AND (columns OR dollar) OR (keyword AND columns)
-        return (has_numbers and (has_columns or has_dollar)) or (has_keyword and has_columns)
+        if has_dollars and has_spacing:
+            return True
+        
+        if has_numbers and has_spacing:
+            return True
+        
+        if has_keyword and (has_numbers or has_spacing or has_dollars):
+            return True
+        
+        return False
     
     @staticmethod
     def extract_table_blocks(text: str) -> List[Dict]:
-        """Extract tables based on column structure"""
-        lines = text.split('\\n')
+        """Extract tables with improved detection"""
+        lines = text.split('\n')
         tables = []
-        current = []
+        current_table = []
+        in_table = False
         
         for i, line in enumerate(lines):
-            if TableDetector.is_table_row(line):
-                current.append(line.strip())
-            else:
-                if len(current) >= 3:  # At least 3 rows
+            stripped = line.strip()
+            
+            if not stripped:
+                # Empty line might end table
+                if in_table and len(current_table) >= 3:
                     tables.append({
-                        'text': '\n'.join(current),
-                        'lines': current.copy(),
-                        'start_line': i - len(current)
+                        'text': '\n'.join(current_table),
+                        'lines': current_table.copy(),
+                        'start_line': i - len(current_table),
+                        'end_line': i
                     })
-                current = []
+                    current_table = []
+                    in_table = False
+                continue
+            
+            is_table = TableDetector.is_table_row(line)
+            
+            if is_table:
+                in_table = True
+                current_table.append(stripped)
+            else:
+                # Not a table row
+                if in_table and len(current_table) >= 3:
+                    # Save accumulated table
+                    tables.append({
+                        'text': '\n'.join(current_table),
+                        'lines': current_table.copy(),
+                        'start_line': i - len(current_table),
+                        'end_line': i
+                    })
+                current_table = []
+                in_table = False
         
-        if len(current) >= 3:
+        # Catch table at end of text
+        if len(current_table) >= 3:
             tables.append({
-                'text': '\\n'.join(current),
-                'lines': current.copy(),
-                'start_line': len(lines) - len(current)
+                'text': '\n'.join(current_table),
+                'lines': current_table.copy(),
+                'start_line': len(lines) - len(current_table),
+                'end_line': len(lines)
             })
         
         return tables
 
 def detect_section(text: str) -> str:
-    """Detect document section"""
+    """Detect document section with better patterns"""
     t = text.lower()
-    if "balance sheet" in t: return "balance_sheet"
-    if "income" in t and "statement" in t: return "income_statement"
-    if "cash flow" in t: return "cash_flow"
-    if "item 8" in t: return "item_8"
-    if "item 7" in t: return "item_7"
+    
+    # Balance sheet detection
+    if "consolidated balance sheet" in t:
+        return "balance_sheet"
+    if "balance sheet" in t and any(word in t for word in ['assets', 'liabilities']):
+        return "balance_sheet"
+    
+    # Income statement
+    if "consolidated statements of operations" in t:
+        return "income_statement"
+    if "income statement" in t or "statement of operations" in t:
+        return "income_statement"
+    
+    # Cash flow
+    if "cash flow" in t:
+        return "cash_flow"
+    
+    # Item sections
+    if "item 8" in t:
+        return "item_8"
+    if "item 7" in t:
+        return "item_7"
+    if "item 1a" in t:
+        return "item_1a"
+    if "item 5" in t:
+        return "item_5"
+    
     return "general"
 
 def load_pdf(path: str) -> List[Dict]:
@@ -90,7 +172,7 @@ def load_pdf(path: str) -> List[Dict]:
     return pages
 
 def smart_chunk(pages: List[Dict]) -> List[Dict]:
-    """Chunk with table preservation"""
+    """Chunk with table preservation - FIXED"""
     chunks = []
     
     for p in pages:
@@ -99,35 +181,50 @@ def smart_chunk(pages: List[Dict]) -> List[Dict]:
         
         # Extract tables
         tables = TableDetector.extract_table_blocks(text)
-        table_lines = set()
+        table_line_ranges = set()
         
-        # Create table chunks
+        # Track which lines are in tables
         for t in tables:
-            chunks.append({
-                "text": t["text"],
-                "page": page,
-                "section": detect_section(t["text"]),
-                "is_table": True
-            })
-            for i in range(t["start_line"], t["start_line"] + len(t["lines"])):
-                table_lines.add(i)
+            for line_num in range(t["start_line"], t["end_line"]):
+                table_line_ranges.add(line_num)
+        
+        # Create table chunks (keep tables intact)
+        for t in tables:
+            table_text = t["text"]
+            
+            # Only create chunk if table has meaningful content
+            if len(table_text) > 50:
+                chunks.append({
+                    "text": table_text,
+                    "page": page,
+                    "section": detect_section(table_text),
+                    "is_table": True
+                })
         
         # Create non-table chunks
-        lines = text.split('\\n')
-        non_table = [line for i, line in enumerate(lines) if i not in table_lines]
-        non_table_text = '\\n'.join(non_table)
+        lines = text.split('\n')
+        non_table_lines = [
+            line for i, line in enumerate(lines) 
+            if i not in table_line_ranges and line.strip()
+        ]
+        
+        non_table_text = '\n'.join(non_table_lines)
         words = non_table_text.split()
         
         start = 0
         while start < len(words):
             end = min(start + CHUNK_SIZE, len(words))
-            chunk = " ".join(words[start:end])
-            chunks.append({
-                "text": chunk,
-                "page": page,
-                "section": detect_section(chunk),
-                "is_table": False
-            })
+            chunk_text = " ".join(words[start:end])
+            
+            # Only create chunk if it has content
+            if len(chunk_text.strip()) > 20:
+                chunks.append({
+                    "text": chunk_text,
+                    "page": page,
+                    "section": detect_section(chunk_text),
+                    "is_table": False
+                })
+            
             if end == len(words):
                 break
             start = end - CHUNK_OVERLAP
@@ -147,7 +244,7 @@ def build_documents(data_folder="data") -> List[Dict]:
         print(f"  Processing: {file}")
         
         pages = load_pdf(path)
-        company = "apple" if "10-q" in file.lower() else "tesla"
+        company = "apple" if "10-q" in file.lower() or "10-k" in file.lower() else "tesla"
         chunks = smart_chunk(pages)
         
         for i, c in enumerate(chunks):
@@ -162,8 +259,20 @@ def build_documents(data_folder="data") -> List[Dict]:
                     "section": str(c.get("section", "general"))
                 }
             })
+        
+        # Debug: Show table detection stats for this file
+        table_chunks = [c for c in chunks if c.get("is_table")]
+        print(f"    • Total chunks: {len(chunks)}")
+        print(f"    • Table chunks: {len(table_chunks)}")
+        
+        # Show sample table chunks
+        balance_sheet_tables = [c for c in table_chunks if "balance" in c["section"]]
+        if balance_sheet_tables:
+            print(f"    • Balance sheet tables: {len(balance_sheet_tables)}")
+            print(f"      Sample from page {balance_sheet_tables[0]['page']}:")
+            print(f"      {balance_sheet_tables[0]['text'][:200]}...")
     
-    print(f"\\n📊 Total chunks: {len(docs)}")
+    print(f"\n📊 Total chunks: {len(docs)}")
     table_count = sum(1 for d in docs if d["metadata"]["is_table"])
     print(f"  • Tables: {table_count}")
     print(f"  • Balance sheets: {sum(1 for d in docs if d['metadata']['section'] == 'balance_sheet')}")
@@ -182,43 +291,35 @@ def index_documents(persist_dir="/kaggle/working/chroma_db"):
             shutil.rmtree(persist_dir, ignore_errors=True)
         except:
             pass
-        time.sleep(3)  # Wait for file handles to release
+        time.sleep(3)
     
-    # Force garbage collection
     gc.collect()
     
-    # Create fresh directory
     os.makedirs(persist_dir, exist_ok=True)
-    
-    # Set permissions
     os.chmod(persist_dir, 0o777)
     
     print("DB path:", persist_dir)
     
     model = SentenceTransformer(EMBED_MODEL_NAME, device=get_device())
     
-    # Create new client
     client = PersistentClient(path=persist_dir)
     
-    # Delete collection if exists
     try:
         client.delete_collection(COLLECTION_NAME)
         time.sleep(1)
     except:
         pass
     
-    # Create fresh collection
     collection = client.get_or_create_collection(COLLECTION_NAME)
     
     docs = build_documents()
     texts = [d["text"] for d in docs]
     
-    print("\\n🔢 Generating embeddings...")
+    print("\n🔢 Generating embeddings...")
     embeddings = model.encode(texts, batch_size=32, convert_to_numpy=True, show_progress_bar=True)
     
     print("💿 Storing vectors...")
     
-    # Add in batches with error handling
     batch_size = 50
     for i in range(0, len(docs), batch_size):
         try:
@@ -230,7 +331,6 @@ def index_documents(persist_dir="/kaggle/working/chroma_db"):
             )
         except Exception as e:
             print(f"Warning: Batch {i} failed: {e}")
-            # Try one by one
             for j in range(i, min(i+batch_size, len(docs))):
                 try:
                     collection.add(
@@ -243,3 +343,7 @@ def index_documents(persist_dir="/kaggle/working/chroma_db"):
                     print(f"  Skipped doc {j}: {e2}")
     
     print(f"✅ Indexed {len(docs)} chunks")
+    
+    # Verify tables were indexed
+    table_count = sum(1 for d in docs if d["metadata"]["is_table"])
+    print(f"✅ Verified {table_count} table chunks indexed")
