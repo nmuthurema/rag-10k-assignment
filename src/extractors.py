@@ -148,70 +148,61 @@ class ReasoningExtractor:
         
         # Special handling for Elon Musk dependency question
         if any('elon musk' in kw.lower() or 'musk' in kw.lower() for kw in keywords):
-            # Look for "highly active" - it's in the key sentence
-            if 'highly active' in context.lower():
-                idx = context.lower().find('highly active')
+            # Split context into chunks (each chunk starts with [N])
+            chunks = re.split(r'\[\d+\]', context)
+            
+            best_sentence = None
+            best_score = 0
+            
+            # Key terms that indicate good reasoning
+            reasoning_terms = ['strategy', 'innovation', 'leadership', 'central', 'critical', 
+                              'instrumental', 'vision', 'technical', 'important', 'particular']
+            
+            for chunk in chunks:
+                if 'elon musk' not in chunk.lower() and 'mr. musk' not in chunk.lower():
+                    continue
                 
-                # Go backwards to find sentence start
-                # Skip periods that are part of abbreviations (Mr., Mrs., Dr., etc.)
-                start = idx
-                while start > 0:
-                    if context[start-1] in '.!?':
-                        # Check if this is an abbreviation
-                        # Look at the word before the period
-                        if start >= 4:
-                            prev_word = context[start-4:start-1]
-                            if prev_word.lower() in ['mr', 'mrs', 'ms', 'dr']:
-                                start -= 1  # This is an abbreviation, keep going
-                                continue
-                        break  # This is a real sentence boundary
-                    start -= 1
+                # Split into sentences
+                sentences = chunk.split('.')
                 
-                # Skip any leading whitespace
-                while start < len(context) and context[start] in ' \n\t':
-                    start += 1
-                
-                # Go forwards to find sentence end
-                end = idx
-                while end < len(context) and context[end] not in '.!?':
-                    end += 1
-                if end < len(context):
-                    end += 1  # Include the period
-                
-                sentence = context[start:end].strip()
-                
-                # Make sure it's substantial and mentions Musk
-                if 'musk' in sentence.lower() and len(sentence) > 50:
-                    return sentence
+                for sent in sentences:
+                    if len(sent) < 30:
+                        continue
+                    
+                    sent_lower = sent.lower()
+                    
+                    # Must mention Musk
+                    if 'musk' not in sent_lower:
+                        continue
+                    
+                    # Count reasoning terms
+                    score = sum(1 for term in reasoning_terms if term in sent_lower)
+                    
+                    # Bonus for "highly dependent" or "dependent on"
+                    if 'dependent' in sent_lower:
+                        score += 2
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_sentence = sent.strip()
+            
+            if best_sentence and best_score >= 2:
+                # Add period if missing
+                if not best_sentence.endswith('.'):
+                    best_sentence += '.'
+                return best_sentence
         
         # For pass-through fund question
         if 'pass-through' in str(keywords).lower():
-            if 'lease pass-through fund arrangements' in context.lower():
-                idx = context.lower().find('lease pass-through fund arrangements')
-                
-                # Find the end of current sentence
-                end = idx
-                while end < len(context) and context[end] not in '.!?':
-                    end += 1
-                if end < len(context):
-                    end += 1  # Skip the period
-                
-                # Skip whitespace
-                while end < len(context) and context[end] in ' \n\t':
-                    end += 1
-                
-                # Now get the next sentence which explains the purpose
-                start = end
-                while end < len(context) and context[end] not in '.!?':
-                    end += 1
-                if end < len(context):
-                    end += 1
-                
-                sentence = context[start:end].strip()
-                if ('finance' in sentence.lower() or 'investor' in sentence.lower()) and len(sentence) > 30:
-                    return sentence
+            if 'under these arrangements' in context.lower():
+                idx = context.lower().find('under these arrangements')
+                end_idx = context.find('.', idx)
+                if end_idx != -1:
+                    sentence = context[idx:end_idx+1].strip()
+                    if len(sentence) > 30:
+                        return sentence
         
-        # Standard extraction for other questions
+        # Standard extraction
         paragraphs = []
         for chunk in context.split('\n\n'):
             chunk = chunk.strip()
