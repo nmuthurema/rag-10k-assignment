@@ -105,15 +105,14 @@ def strict_keyword_filter(chunks: List[Dict], query: str) -> List[Dict]:
             
             filtered.append(chunk)
     
-    # Q3: Term debt
+    # Q3: Term debt - RELAXED (just needs "term debt" mentioned)
     elif "term debt" in query_lower:
         for chunk in chunks:
             text_lower = chunk["text"].lower()
             
-            # Must have "term debt" AND at least one of current/non-current
+            # Just need "term debt" mentioned (RELAXED to get more chunks)
             if "term debt" in text_lower:
-                if "current" in text_lower or "non-current" in text_lower or "net of current" in text_lower:
-                    filtered.append(chunk)
+                filtered.append(chunk)
     
     # Q1 & Q6: Revenue
     elif "revenue" in query_lower or "total net sales" in query_lower:
@@ -200,10 +199,11 @@ class QueryRouter:
             analysis["keywords"].extend(["automotive sales", "total revenues"])
             analysis["prefer_tables"] = True
         
-        # Vehicles
+        # Q9: Vehicles (NEW - SAFE ADDITION)
         if "vehicles" in q or "produce" in q:
             analysis["query_type"] = "factual"
             analysis["keywords"].extend(["model s", "model 3", "model x", "model y", "cybertruck"])
+            analysis["prefer_early_pages"] = True  # NEW: boost early pages
         
         # Reasoning
         if any(w in q for w in ["reason", "dependent", "why", "purpose"]):
