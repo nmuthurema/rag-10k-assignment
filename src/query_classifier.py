@@ -4,7 +4,15 @@ from typing import Dict, List
 
 class QueryClassifier:
     """Classifies queries into types and extracts key information"""
-    
+    out_of_scope_terms = [
+            "color", "painted", "weather", "population",
+            "forecast", "stock price", "future"
+        ]
+        
+        if any(t in q_lower for t in out_of_scope_terms):
+            result["type"] = "out_of_scope"
+            return result
+            
     @staticmethod
     def classify(question: str) -> Dict:
         q_lower = question.lower()
@@ -16,6 +24,7 @@ class QueryClassifier:
             "expected_output": "text"
         }
         
+
         # Extract entities
         if "apple" in q_lower:
             result["entities"]["company"] = "apple"

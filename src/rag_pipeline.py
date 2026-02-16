@@ -41,7 +41,7 @@ class ImprovedRAGPipeline:
         if verbose:
             print(f"\n🔍 Query: {query[:80]}...")
         
-        top_k = 12
+        top_k = 20
         chunks, analysis = self.retriever.retrieve(query, top_k=top_k)
         
         if not chunks:

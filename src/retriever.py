@@ -180,11 +180,23 @@ class ImprovedRetriever:
             filtered = [
                 d for d in docs
                 if any(k.lower() in d["text"].lower() for k in keywords)
+                or d["metadata"].get("is_table")
             ]
 
             if filtered:
                 print(f"  ✅ Filtered {len(docs)} → {len(filtered)}")
                 docs = filtered
+        
+        # Financial section filtering
+        if analysis.get("query_type") == "financial":
+            financial_sections = ["income_statement", "balance_sheet", "cash_flow"]
+            filtered = [
+                d for d in docs
+                if d["metadata"].get("section") in financial_sections
+            ]
+            if filtered:
+                docs = filtered
+
 
         # Remove TOC noise
         docs = remove_toc_chunks(docs)
