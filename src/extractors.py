@@ -152,12 +152,26 @@ class ReasoningExtractor:
             if 'highly active' in context.lower():
                 idx = context.lower().find('highly active')
                 
-                # Go backwards to find sentence start (look for period or beginning)
+                # Go backwards to find sentence start
+                # Skip periods that are part of abbreviations (Mr., Mrs., Dr., etc.)
                 start = idx
-                while start > 0 and context[start-1] not in '.!?':
+                while start > 0:
+                    if context[start-1] in '.!?':
+                        # Check if this is an abbreviation
+                        # Look at the word before the period
+                        if start >= 4:
+                            prev_word = context[start-4:start-1]
+                            if prev_word.lower() in ['mr', 'mrs', 'ms', 'dr']:
+                                start -= 1  # This is an abbreviation, keep going
+                                continue
+                        break  # This is a real sentence boundary
                     start -= 1
                 
-                # Go forwards to find sentence end (look for period)
+                # Skip any leading whitespace
+                while start < len(context) and context[start] in ' \n\t':
+                    start += 1
+                
+                # Go forwards to find sentence end
                 end = idx
                 while end < len(context) and context[end] not in '.!?':
                     end += 1
@@ -166,26 +180,8 @@ class ReasoningExtractor:
                 
                 sentence = context[start:end].strip()
                 
-                # Make sure it's the right sentence (contains "Mr. Musk" or "Musk")
+                # Make sure it's substantial and mentions Musk
                 if 'musk' in sentence.lower() and len(sentence) > 50:
-                    return sentence
-            
-            # Fallback: look for "spends significant time"
-            if 'spends significant time' in context.lower():
-                idx = context.lower().find('spends significant time')
-                
-                start = idx
-                while start > 0 and context[start-1] not in '.!?':
-                    start -= 1
-                
-                end = idx
-                while end < len(context) and context[end] not in '.!?':
-                    end += 1
-                if end < len(context):
-                    end += 1
-                
-                sentence = context[start:end].strip()
-                if len(sentence) > 50:
                     return sentence
         
         # For pass-through fund question
@@ -193,23 +189,26 @@ class ReasoningExtractor:
             if 'lease pass-through fund arrangements' in context.lower():
                 idx = context.lower().find('lease pass-through fund arrangements')
                 
-                # Find the end of this sentence and get the NEXT sentence
-                # which explains the purpose
-                start = idx
-                while start < len(context) and context[start] not in '.!?':
-                    start += 1
-                if start < len(context):
-                    start += 1  # Skip the period
+                # Find the end of current sentence
+                end = idx
+                while end < len(context) and context[end] not in '.!?':
+                    end += 1
+                if end < len(context):
+                    end += 1  # Skip the period
                 
-                # Now get the next sentence
-                end = start + 1
+                # Skip whitespace
+                while end < len(context) and context[end] in ' \n\t':
+                    end += 1
+                
+                # Now get the next sentence which explains the purpose
+                start = end
                 while end < len(context) and context[end] not in '.!?':
                     end += 1
                 if end < len(context):
                     end += 1
                 
                 sentence = context[start:end].strip()
-                if 'finance' in sentence.lower() or 'investor' in sentence.lower():
+                if ('finance' in sentence.lower() or 'investor' in sentence.lower()) and len(sentence) > 30:
                     return sentence
         
         # Standard extraction for other questions
@@ -242,4 +241,4 @@ class ReasoningExtractor:
         
         relevant.sort(key=lambda x: x[1], reverse=True)
         return relevant[0][0]
-
+    
