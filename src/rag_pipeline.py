@@ -69,8 +69,24 @@ class ImprovedRAGPipeline:
                 unique_chunks.append(c)
                 seen.add(c["text"])
         
-        # Build context
-        context = build_context(unique_chunks, max_chars=15000)
+        # Deduplicate first
+        seen = set()
+        unique_chunks = []
+        for c in chunks:
+            if c["text"] not in seen:
+                unique_chunks.append(c)
+                seen.add(c["text"])
+        
+        # ⭐ NEW: Separate table and text context
+        table_chunks = [c for c in unique_chunks if c["metadata"].get("is_table")]
+        table_context = "\n".join(c["text"] for c in table_chunks[:3])
+        
+        # Build full context
+        text_context = build_context(unique_chunks, max_chars=15000)
+        
+        # Final context (tables first)
+        context = table_context + "\n\n" + text_context
+
         
         # Generate answer
         try:
