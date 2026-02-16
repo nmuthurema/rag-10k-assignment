@@ -126,7 +126,7 @@ class ImprovedRetriever:
         # Retrieve chunks
         results = self.collection.query(
             query_embeddings=query_emb,
-            n_results=150,
+            n_results=200,
             where=where,
             include=["documents", "metadatas"]
         )
