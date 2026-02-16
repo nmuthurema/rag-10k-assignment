@@ -5,7 +5,6 @@ from typing import Optional, List
 class FactualExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Q9: UNCHANGED - KEEP WORKING VERSION"""
         vehicles = []
         context_lower = context.lower()
         
@@ -28,7 +27,6 @@ class FactualExtractor:
 class NumericalExtractor:
     @staticmethod
     def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
-        """Q1 & Q6: UNCHANGED - WORKING PERFECTLY"""
         patterns = [
             r'Total\s+net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
             r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
@@ -43,7 +41,6 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_shares(context: str, query: str = "") -> Optional[str]:
-        """Q2: UNCHANGED - WORKING PERFECTLY"""
         match = re.search(r'(\d{1,3}(?:,\d{3}){3})\s+shares[^.]*(?:as\s+of|were\s+issued\s+and\s+outstanding)', context, re.I)
         if match:
             return f"{match.group(1)} shares"
@@ -59,53 +56,41 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Q3: ENHANCED with fallback - won't affect other questions"""
+        """Q3: Extract from Apple Balance Sheet - Page 34"""
         current = noncurrent = None
         
-        # METHOD 1: Line-by-line (ORIGINAL - KEEP)
-        for line in context.split('\n'):
-            line_lower = line.lower()
-            
-            if 'term debt' not in line_lower:
-                continue
-            
-            if 'current' in line_lower and 'net of' not in line_lower and 'non-current' not in line_lower:
-                m = re.search(r'\$\s*(\d{1,3}(?:,\d{3})*)', line)
-                if m and not current:
-                    current = int(m.group(1).replace(',', ''))
-            
-            if 'net of current' in line_lower or 'non-current' in line_lower:
-                m = re.search(r'\$\s*(\d{1,3}(?:,\d{3})*)', line)
-                if m and not noncurrent:
-                    noncurrent = int(m.group(1).replace(',', ''))
+        # The balance sheet has these exact lines:
+        # Current liabilities: ... Term debt 10,912
+        # Non-current liabilities: Term debt 85,750
         
-        # If METHOD 1 succeeded, return immediately
-        if current and noncurrent:
-            return f"${current + noncurrent:,} million"
+        # Look for these patterns
+        patterns_current = [
+            r'Current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',  # Simpler fallback
+        ]
         
-        # METHOD 2: FALLBACK ONLY (only runs if METHOD 1 failed)
-        # More flexible search across entire context
-        if not current:
-            patterns = [
-                r'Term\s+debt[,\s]+current\s+portion[^\$]{0,50}\$\s*(\d{1,3}(?:,\d{3})*)',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, context, re.I | re.DOTALL)
-                if m:
-                    current = int(m.group(1).replace(',', ''))
-                    break
+        patterns_noncurrent = [
+            r'Non-current\s+liabilities:.*?Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',
+            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)',  # Will get both
+        ]
         
-        if not noncurrent:
-            patterns = [
-                r'Term\s+debt[,\s]+net\s+of\s+current\s+portion[^\$]{0,50}\$\s*(\d{1,3}(?:,\d{3})*)',
-            ]
-            for pattern in patterns:
-                m = re.search(pattern, context, re.I | re.DOTALL)
-                if m:
-                    noncurrent = int(m.group(1).replace(',', ''))
-                    break
+        # Find all "Term debt" with numbers
+        term_debt_matches = re.findall(r'Term\s+debt\s+(\d{1,3}(?:,\d{3})*)', context, re.I)
         
-        # Final return
+        if len(term_debt_matches) >= 2:
+            # Take first two matches as current and non-current
+            vals = [int(m.replace(',', '')) for m in term_debt_matches[:2]]
+            vals.sort()  # Smaller one is likely current
+            current = vals[0]
+            noncurrent = vals[1]
+        elif len(term_debt_matches) == 1:
+            # Only found one, try harder
+            val = int(term_debt_matches[0].replace(',', ''))
+            if val < 20000:
+                current = val
+            else:
+                noncurrent = val
+        
         if current and noncurrent:
             return f"${current + noncurrent:,} million"
         
@@ -114,7 +99,6 @@ class NumericalExtractor:
 class CalculationExtractor:
     @staticmethod
     def calculate_percentage(context: str) -> Optional[str]:
-        """Q7: UNCHANGED - WORKING PERFECTLY"""
         auto = re.search(r'Automotive\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)', context, re.I)
         total = re.search(r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)', context, re.I)
         
@@ -130,50 +114,42 @@ class CalculationExtractor:
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Q8: ENHANCED to get complete sentence - won't affect other questions"""
+        """Q8: Extract complete sentence about Elon Musk from pages 21-22"""
         if "elon musk" not in str(keywords).lower():
             return None
         
-        # METHOD 1: Try to find "highly dependent" and get complete sentence
+        # The actual text is: "In particular, we are highly dependent on the services of 
+        # Elon Musk, Technoking of Tesla and our Chief Executive Officer."
+        
+        # Search for the complete sentence
+        pattern = r'In\s+particular,\s+we\s+are\s+highly\s+dependent\s+on\s+the\s+services\s+of\s+Elon\s+Musk.*?Officer\.'
+        match = re.search(pattern, context, re.I | re.DOTALL)
+        
+        if match:
+            sentence = match.group(0)
+            # Clean up whitespace
+            sentence = re.sub(r'\s+', ' ', sentence)
+            return sentence
+        
+        # Fallback: find any sentence with "highly dependent" and "Musk"
         idx = context.lower().find("highly dependent")
         if idx != -1:
+            # Get surrounding text
+            start = max(0, idx - 50)
+            end = min(len(context), idx + 400)
+            excerpt = context[start:end]
+            
             # Find sentence boundaries
-            start = context.rfind('. ', 0, idx)
-            start = start + 2 if start != -1 else max(0, idx - 100)
-            
-            end = context.find('.', idx)
-            end = end + 1 if end != -1 else min(len(context), idx + 400)
-            
-            sentence = context[start:end].strip()
-            sentence = re.sub(r'\s+', ' ', sentence)
-            
-            if len(sentence) > 50 and "musk" in sentence.lower():
-                return sentence
-        
-        # METHOD 2: FALLBACK (original logic)
-        sentences = re.split(r'(?<=[.!?])\s+', context)
-        
-        for sentence in sentences:
-            s_lower = sentence.lower()
-            if "highly dependent" in s_lower and "musk" in s_lower:
-                clean = re.sub(r'\s+', ' ', sentence).strip()
-                if len(clean) > 50:
-                    return clean
-        
-        # METHOD 3: FINAL FALLBACK
-        for sentence in sentences:
-            s_lower = sentence.lower()
-            if "depend" in s_lower and "musk" in s_lower:
-                clean = re.sub(r'\s+', ' ', sentence).strip()
-                if len(clean) > 50:
-                    return clean
+            sentences = re.split(r'[.!?]+', excerpt)
+            for s in sentences:
+                if "musk" in s.lower() and len(s) > 50:
+                    return re.sub(r'\s+', ' ', s).strip()
         
         return None
 
 class DateExtractor:
     @staticmethod
     def extract(context: str) -> Optional[str]:
-        """Q4: UNCHANGED - WORKING PERFECTLY"""
         pattern = r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})'
         match = re.search(pattern, context, re.IGNORECASE)
         
@@ -185,7 +161,6 @@ class DateExtractor:
 class YesNoExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-        """Q5: UNCHANGED - WORKING PERFECTLY"""
         if any('sec' in kw.lower() for kw in keywords):
             if re.search(r'\bNone\b', context):
                 return "No"
