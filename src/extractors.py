@@ -70,6 +70,31 @@ class NumericalExtractor:
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
     
+        # Special handling for shares outstanding with date
+        if 'shares' in query.lower() and 'outstanding' in query.lower():
+            # Extract target date from query
+            date_match = re.search(
+                r'((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4})',
+                query
+            )
+            
+            if date_match:
+                target_date = date_match.group(1)
+                
+                # Look for chunks containing this exact date
+                for chunk in retrieved_chunks:
+                    if target_date in chunk['text']:
+                        # Find share count in billions format
+                        match = re.search(r'(\d{1,3}(?:,\d{3}){2,})\s+shares', chunk['text'], re.IGNORECASE)
+                        
+                        if match:
+                            shares_str = match.group(1)
+                            shares_num = int(shares_str.replace(',', ''))
+                            
+                            # Validate it's in the right magnitude (10-20 billion for Apple)
+                            if shares_num > 10_000_000_000:
+                                return f"{shares_str} shares"
+        
         # Strongest pattern from Apple filing
         pattern = (
             r'([\d,]{10,})\s+shares\s+of\s+common\s+stock\s+'
@@ -96,7 +121,41 @@ class NumericalExtractor:
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-    
+        # Special handling for term debt calculation
+        if 'term debt' in query.lower() and ('current' in query.lower() or 'non-current' in query.lower()):
+            current_debt = None
+            noncurrent_debt = None
+            
+            # Search through retrieved chunks
+            for chunk in retrieved_chunks:
+                text = chunk['text']
+                text_lower = text.lower()
+                
+                # Find current portion
+                if not current_debt and 'term debt' in text_lower:
+                    # Pattern: "Term debt, current portion $ 9,822"
+                    match = re.search(r'term debt[,\s]+current[^$]*\$\s*(\d{1,3}(?:,\d{3})*)', text_lower)
+                    if match:
+                        current_debt = int(match.group(1).replace(',', ''))
+                        print(f"Found current debt: ${current_debt}M")
+                
+                # Find non-current portion  
+                if not noncurrent_debt and 'term debt' in text_lower:
+                    # Pattern: "Term debt, net of current portion $ 86,840"
+                    match = re.search(r'term debt[,\s]+(?:net of current|non-current)[^$]*\$\s*(\d{1,3}(?:,\d{3})*)', text_lower)
+                    if match:
+                        noncurrent_debt = int(match.group(1).replace(',', ''))
+                        print(f"Found non-current debt: ${noncurrent_debt}M")
+            
+            # If we found both, sum them
+            if current_debt and noncurrent_debt:
+                total = current_debt + noncurrent_debt
+                print(f"Total term debt: ${total}M")
+                return f"${total:,} million"
+            
+            # If we only found one, something is wrong - fall back to LLM
+            if current_debt or noncurrent_debt:
+                print("⚠️ Found only one component of term debt, falling back to LLM")
         current = re.search(
             r'current[^$]*\$\s*([0-9,]+)',
             context,
