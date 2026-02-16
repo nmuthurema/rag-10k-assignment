@@ -179,4 +179,14 @@ class ImprovedRetriever:
         top_pages = [d["metadata"]["page"] for d in ranked_docs[:top_k]]
         print(f"  📄 Top pages: {top_pages[:5]}")
         
+        # DEBUG: Show top chunks
+        print()
+        print("🔎 TOP RETRIEVED CHUNKS:")
+        
+        for i, d in enumerate(ranked_docs[:3]):
+            print()
+            print(f"--- Chunk {i+1} (Page {d['metadata']['page']}) ---")
+            print(d["text"][:400])
+
+            
         return ranked_docs[:top_k], analysis

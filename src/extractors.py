@@ -70,29 +70,30 @@ class NumericalExtractor:
     @staticmethod
     def extract_shares(context: str) -> Optional[str]:
     
-        # Strong pattern first
+        # Strongest pattern from Apple filing
+        pattern = (
+            r'([\d,]{10,})\s+shares\s+of\s+common\s+stock\s+'
+            r'were\s+issued\s+and\s+outstanding'
+        )
+    
+        match = re.search(pattern, context, re.IGNORECASE)
+        if match:
+            num = int(match.group(1).replace(",", ""))
+            return f"{num:,} shares"
+    
+        # fallback: large number + outstanding
         match = re.search(
             r'([\d,]{10,})\s+shares.*?outstanding',
             context,
-            re.IGNORECASE
+            re.IGNORECASE | re.DOTALL
         )
+    
         if match:
-            return f"{int(match.group(1).replace(',', '')):,} shares"
-    
-        # fallback patterns
-        patterns = [
-            r'([\d,]+)\s+shares\s+of\s+common\s+stock\s+were\s+issued\s+and\s+outstanding',
-            r'shares?.*?outstanding.*?([\d,]{10,})',
-        ]
-    
-        for pattern in patterns:
-            m = re.search(pattern, context, re.IGNORECASE | re.DOTALL)
-            if m:
-                return f"{int(m.group(1).replace(',', '')):,} shares"
+            num = int(match.group(1).replace(",", ""))
+            return f"{num:,} shares"
     
         return None
 
-    @staticmethod
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
     
