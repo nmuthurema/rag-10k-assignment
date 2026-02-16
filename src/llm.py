@@ -62,7 +62,8 @@ class SmartLLM:
             print("  🔢 Using numerical extractor...")
             
             if "shares" in question.lower() and "outstanding" in question.lower():
-                extracted = self.numerical_extractor.extract_shares(context)
+                # FIXED: Pass query to extract_shares
+                extracted = self.numerical_extractor.extract_shares(context, question)
             elif "debt" in question.lower():
                 extracted = self.numerical_extractor.extract_debt(context)
             else:

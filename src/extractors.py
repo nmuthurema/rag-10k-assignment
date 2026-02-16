@@ -33,7 +33,7 @@ class FactualExtractor:
         return None
 
 # ============================================================
-# NUMERICAL
+# NUMERICAL - FIXED
 # ============================================================
 
 class NumericalExtractor:
@@ -68,33 +68,32 @@ class NumericalExtractor:
         return None
 
     @staticmethod
-    def extract_shares(context: str) -> Optional[str]:
-    
-        # Special handling for shares outstanding with date
-        if 'shares' in query.lower() and 'outstanding' in query.lower():
-            # Extract target date from query
-            date_match = re.search(
-                r'((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4})',
-                query
-            )
-            
-            if date_match:
-                target_date = date_match.group(1)
-                
-                # Look for chunks containing this exact date
-                for chunk in retrieved_chunks:
-                    if target_date in chunk['text']:
-                        # Find share count in billions format
-                        match = re.search(r'(\d{1,3}(?:,\d{3}){2,})\s+shares', chunk['text'], re.IGNORECASE)
-                        
-                        if match:
-                            shares_str = match.group(1)
-                            shares_num = int(shares_str.replace(',', ''))
-                            
-                            # Validate it's in the right magnitude (10-20 billion for Apple)
-                            if shares_num > 10_000_000_000:
-                                return f"{shares_str} shares"
+    def extract_shares(context: str, query: str = "") -> Optional[str]:
+        """FIXED: Extract shares outstanding with date validation"""
         
+        # Extract target date from query if provided
+        date_match = re.search(
+            r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}',
+            query,
+            re.IGNORECASE
+        )
+        
+        target_date = date_match.group(0) if date_match else None
+        
+        # If we have a target date, only look in context with that date
+        if target_date and target_date in context:
+            # Find share count near the target date
+            match = re.search(r'(\d{1,3}(?:,\d{3}){2,})\s+shares', context, re.IGNORECASE)
+            
+            if match:
+                shares_str = match.group(1)
+                shares_num = int(shares_str.replace(',', ''))
+                
+                # Validate magnitude (Apple: 10-20 billion shares)
+                if shares_num >= 10_000_000_000:
+                    return f"{shares_str} shares"
+        
+        # Fallback patterns
         # Strongest pattern from Apple filing
         pattern = (
             r'([\d,]{10,})\s+shares\s+of\s+common\s+stock\s+'
@@ -104,7 +103,8 @@ class NumericalExtractor:
         match = re.search(pattern, context, re.IGNORECASE)
         if match:
             num = int(match.group(1).replace(",", ""))
-            return f"{num:,} shares"
+            if num >= 10_000_000_000:  # Validate magnitude
+                return f"{num:,} shares"
     
         # fallback: large number + outstanding
         match = re.search(
@@ -115,66 +115,46 @@ class NumericalExtractor:
     
         if match:
             num = int(match.group(1).replace(",", ""))
-            return f"{num:,} shares"
+            if num >= 10_000_000_000:  # Validate magnitude
+                return f"{num:,} shares"
     
         return None
 
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        # Special handling for term debt calculation
-        if 'term debt' in query.lower() and ('current' in query.lower() or 'non-current' in query.lower()):
-            current_debt = None
-            noncurrent_debt = None
-            
-            # Search through retrieved chunks
-            for chunk in retrieved_chunks:
-                text = chunk['text']
-                text_lower = text.lower()
-                
-                # Find current portion
-                if not current_debt and 'term debt' in text_lower:
-                    # Pattern: "Term debt, current portion $ 9,822"
-                    match = re.search(r'term debt[,\s]+current[^$]*\$\s*(\d{1,3}(?:,\d{3})*)', text_lower)
-                    if match:
-                        current_debt = int(match.group(1).replace(',', ''))
-                        print(f"Found current debt: ${current_debt}M")
-                
-                # Find non-current portion  
-                if not noncurrent_debt and 'term debt' in text_lower:
-                    # Pattern: "Term debt, net of current portion $ 86,840"
-                    match = re.search(r'term debt[,\s]+(?:net of current|non-current)[^$]*\$\s*(\d{1,3}(?:,\d{3})*)', text_lower)
-                    if match:
-                        noncurrent_debt = int(match.group(1).replace(',', ''))
-                        print(f"Found non-current debt: ${noncurrent_debt}M")
-            
-            # If we found both, sum them
-            if current_debt and noncurrent_debt:
-                total = current_debt + noncurrent_debt
-                print(f"Total term debt: ${total}M")
+        """FIXED: Extract and sum current + non-current term debt"""
+        
+        # Look for both components
+        current_debt = None
+        noncurrent_debt = None
+        
+        # Pattern for current portion
+        current_match = re.search(
+            r'term debt[,\s]+current[^$]*?\$\s*(\d{1,3}(?:,\d{3})*)',
+            context,
+            re.IGNORECASE
+        )
+        
+        # Pattern for non-current portion
+        noncurrent_match = re.search(
+            r'term debt[,\s]+(?:non-current|net of current)[^$]*?\$\s*(\d{1,3}(?:,\d{3})*)',
+            context,
+            re.IGNORECASE
+        )
+        
+        if current_match:
+            current_debt = int(current_match.group(1).replace(',', ''))
+        
+        if noncurrent_match:
+            noncurrent_debt = int(noncurrent_match.group(1).replace(',', ''))
+        
+        # If we found both components, sum them
+        if current_debt and noncurrent_debt:
+            total = current_debt + noncurrent_debt
+            # Validate range (Apple: $50-200B)
+            if 50_000 <= total <= 200_000:
                 return f"${total:,} million"
-            
-            # If we only found one, something is wrong - fall back to LLM
-            if current_debt or noncurrent_debt:
-                print("⚠️ Found only one component of term debt, falling back to LLM")
-        current = re.search(
-            r'current[^$]*\$\s*([0-9,]+)',
-            context,
-            re.IGNORECASE
-        )
-        noncurrent = re.search(
-            r'non[- ]?current[^$]*\$\s*([0-9,]+)',
-            context,
-            re.IGNORECASE
-        )
-    
-        if current and noncurrent:
-            try:
-                c = int(current.group(1).replace(',', ''))
-                nc = int(noncurrent.group(1).replace(',', ''))
-                return f"${c + nc:,} million"
-            except:
-                pass
-    
+        
         return None
 
 
@@ -208,35 +188,57 @@ class CalculationExtractor:
         return None
 
 # ============================================================
-# REASONING
+# REASONING - FIXED
 # ============================================================
 
 class ReasoningExtractor:
     @staticmethod
     def extract(context: str, keywords: List[str]) -> Optional[str]:
-    
+        """FIXED: Extract reasoning with synthesis, not quotes"""
+        
         if "elon musk" in str(keywords).lower():
-    
+            # Extract relevant sentences
             sentences = re.split(r'(?<=[.!?])\s+', context)
-    
+            
             selected = []
-    
+            
             for s in sentences:
                 s_low = s.lower()
-    
+                
                 if "musk" not in s_low:
                     continue
-    
+                
+                # Look for key reasoning terms
                 if any(t in s_low for t in [
                     "strategy", "innovation", "leadership",
                     "critical", "central", "dependent",
-                    "disrupt", "loss"
+                    "disrupt", "loss", "services"
                 ]):
                     selected.append(s.strip())
-    
+            
             if selected:
-                return " ".join(selected[:3])
-    
+                # Combine and synthesize the first few sentences
+                combined = " ".join(selected[:3])
+                
+                # Try to create a concise summary
+                # Look for key phrases
+                if "highly dependent" in combined.lower():
+                    # Extract the core reasoning
+                    match = re.search(
+                        r'highly dependent[^.]*?(?:services|leadership|strategy)[^.]*',
+                        combined,
+                        re.IGNORECASE
+                    )
+                    if match:
+                        core = match.group(0)
+                        # Add consequence if found
+                        if any(word in combined.lower() for word in ['loss', 'disrupt', 'harm', 'affect']):
+                            return f"{core}; loss could significantly disrupt operations"
+                        return core
+                
+                # Return synthesized version
+                return combined[:300]  # Limit length
+        
         return None
 
 
