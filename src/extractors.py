@@ -38,9 +38,11 @@ class NumericalExtractor:
     @staticmethod
     def extract_revenue(context: str, expected_range: tuple = None) -> Optional[str]:
         patterns = [
+            r'Net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
             r'Total\s+net\s+sales\s+\$\s*(\d{1,3}(?:,\d{3})+)',
-            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)',
+            r'Total\s+revenues?\s+\$\s*(\d{1,3}(?:,\d{3})+)'
         ]
+
 
         for pattern in patterns:
             match = re.search(pattern, context, re.IGNORECASE)
@@ -83,29 +85,33 @@ class NumericalExtractor:
     # ---------- Q3 ----------
     @staticmethod
     def extract_debt(context: str) -> Optional[str]:
-        """Robust extraction for Apple term debt"""
-
-        # 🔥 FIRST: look for total directly
-        total_match = re.search(
+    
+        # Current
+        current = re.search(
+            r'Current\s+portion.*?(\d{1,3}(?:,\d{3})+)',
+            context, re.I
+        )
+    
+        # Non-current
+        non_current = re.search(
+            r'Term\s+debt.*?(\d{1,3}(?:,\d{3})+)',
+            context, re.I
+        )
+    
+        if current and non_current:
+            c = int(current.group(1).replace(",", ""))
+            n = int(non_current.group(1).replace(",", ""))
+            return f"${c+n:,} million"
+    
+        # fallback total
+        total = re.search(
             r'Total\s+term\s+debt.*?(\d{1,3}(?:,\d{3})+)',
-            context,
-            re.I | re.DOTALL
+            context, re.I
         )
-
-        if total_match:
-            return total_match.group(1)
-
-        # 🔥 SECOND: sum current + non-current
-        values = re.findall(
-            r'Term\s+debt\s+(\d{1,3}(?:,\d{3})+)',
-            context,
-            re.I
-        )
-
-        if len(values) >= 2:
-            nums = [int(v.replace(",", "")) for v in values[:2]]
-            return f"{sum(nums):,}"
-
+    
+        if total:
+            return f"${total.group(1)} million"
+    
         return None
 
 
